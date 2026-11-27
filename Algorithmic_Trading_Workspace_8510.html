@@ -3027,11 +3027,11 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 <div id="replayAlgoChartWrap" style="display:none; margin-bottom:16px; border:1px solid var(--border-subtle); border-radius:8px; padding:8px 10px 4px; background:rgba(9,14,26,0.85);">
                     <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px; flex-wrap:wrap;">
                         <span style="font-size:12px; font-weight:700; color:#38bdf8;">ALGO CHART — 15m Nifty spot + 4/8 EMA</span>
-                        <span id="replayAlgoChartSubtitle" style="font-size:10px; color:var(--text-muted);">Bright Red = 8 EMA · Green = 4 EMA · ✕ IN #N / ✕ OUT #N = exact Nifty spot entry &amp; exit levels</span>
+                        <span id="replayAlgoChartSubtitle" style="font-size:10px; color:var(--text-muted);">Bright Red = 8 EMA · Cyan = 4 EMA · ✕ IN #N / ✕ OUT #N = exact 8 EMA Prototype Nifty spot entry &amp; exit levels</span>
                     </div>
                     <div id="replayAlgoChart" style="position:relative; width:100%; height:420px;">
                         <div id="replayAlgoChartHost" style="width:100%; height:100%;"></div>
-                        <canvas id="replayAlgoChartOverlay" style="position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none;"></canvas>
+                        <canvas id="replayAlgoChartOverlay" style="position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:20;"></canvas>
                     </div>
                 </div>
 
@@ -7002,8 +7002,66 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
         let _replayEma8Series = null;
         let _replayOverlayCanvas = null;
         let _replayOverlayTrades = [];
+        let _replayChartBars = [];
         let _replayOverlayRangeUnsub = null;
         let _replayChartResizeObs = null;
+
+        function replayIsEma8PrototypeTrade(t) {
+            const sid = String(t.strategy_id || "").toUpperCase();
+            const setup = String(t.setup_name || t.setup || "");
+            const blob = sid + " " + setup;
+            return /EMA8_PROTOTYPE|8 EMA PROTOTYPE/.test(blob);
+        }
+
+        function replayIstSessionMins(raw) {
+            const s = String(raw || "");
+            const m = s.match(/(\d{1,2}):(\d{2})/);
+            if (!m) return null;
+            let h = parseInt(m[1], 10);
+            const min = parseInt(m[2], 10);
+            if (/PM/i.test(s) && h < 12) h += 12;
+            if (/AM/i.test(s) && h === 12) h = 0;
+            return h * 60 + min;
+        }
+
+        function replayFloor15SessionMins(mins) {
+            return Math.floor(mins / 15) * 15;
+        }
+
+        function replayBarIstSessionMins(barTime) {
+            const t = Number(barTime);
+            if (!Number.isFinite(t)) return null;
+            const ms = t > 1e12 ? t : t * 1000;
+            const fmt = new Intl.DateTimeFormat("en-GB", {
+                timeZone: "Asia/Kolkata",
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: false,
+            }).formatToParts(new Date(ms));
+            const hh = parseInt(fmt.find(p => p.type === "hour")?.value || "0", 10);
+            const mm = parseInt(fmt.find(p => p.type === "minute")?.value || "0", 10);
+            return hh * 60 + mm;
+        }
+
+        function replayMatchBarForIst(bars, istRaw) {
+            const mins = replayIstSessionMins(istRaw);
+            if (mins == null || !(bars || []).length) return null;
+            const target = replayFloor15SessionMins(mins);
+            let best = null;
+            let bestD = 1e9;
+            for (const b of bars) {
+                const bm = replayBarIstSessionMins(b.time);
+                if (bm == null) continue;
+                const bb = replayFloor15SessionMins(bm);
+                if (bb === target) return b;
+                const d = Math.abs(bb - target);
+                if (d < bestD) {
+                    bestD = d;
+                    best = b;
+                }
+            }
+            return best;
+        }
 
         function replayParseTradeUnix(raw, fallbackUnix) {
             const u = Number(fallbackUnix);
@@ -7017,12 +7075,6 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
             return null;
         }
 
-        function replay15mBucketUnix(ts) {
-            const t = Number(ts);
-            if (!Number.isFinite(t) || t <= 0) return null;
-            return Math.floor(t / 900) * 900;
-        }
-
         function replayOutMarkerColor(t) {
             const outcome = String(t.outcome || t.result || t.exit_reason || "").toUpperCase();
             const np = Number(t.net_pnl);
@@ -7033,17 +7085,23 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
             return "#fbbf24";
         }
 
-        function replayDrawCrossMark(ctx, x, y, color, sizePx, lineW) {
+        function replayDrawCrossMarkHiContrast(ctx, x, y, innerColor, sizePx) {
             const h = sizePx / 2;
-            ctx.strokeStyle = color;
-            ctx.lineWidth = lineW;
             ctx.lineCap = "round";
-            ctx.beginPath();
-            ctx.moveTo(x - h, y - h);
-            ctx.lineTo(x + h, y + h);
-            ctx.moveTo(x + h, y - h);
-            ctx.lineTo(x - h, y + h);
-            ctx.stroke();
+            const strokeX = () => {
+                ctx.beginPath();
+                ctx.moveTo(x - h, y - h);
+                ctx.lineTo(x + h, y + h);
+                ctx.moveTo(x + h, y - h);
+                ctx.lineTo(x - h, y + h);
+                ctx.stroke();
+            };
+            ctx.strokeStyle = "rgba(15, 23, 42, 0.95)";
+            ctx.lineWidth = 3.5;
+            strokeX();
+            ctx.strokeStyle = innerColor;
+            ctx.lineWidth = 2.2;
+            strokeX();
         }
 
         function replayDrawSpotLabel(ctx, x, y, text, color) {
@@ -7080,41 +7138,42 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
 
             sorted.forEach((t, i) => {
                 const n = i + 1;
-                const entTs = replayParseTradeUnix(t.entry_ist || t.entry_time, t.entry_unix);
-                const exTs = replayParseTradeUnix(t.exit_ist || t.exit_time, t.exit_unix);
-                const spotIn = Number(t.index_entry ?? t.spot_entry ?? t.nifty_spot_entry);
-                const spotOut = Number(t.index_exit ?? t.spot_exit ?? t.nifty_spot_exit);
-                if (!entTs || !(spotIn > 0)) return;
+                const entryIst = t.entry_ist || t.entry_time;
+                const exitIst = t.exit_ist || t.exit_time;
+                const spotIn = Number(t.index_entry ?? t.spot_entry ?? 0);
+                const spotOut = Number(t.index_exit ?? t.spot_exit ?? 0);
+                if (!(spotIn > 0)) return;
 
-                const bucketIn = replay15mBucketUnix(entTs);
-                const xIn = _replayAlgoChart.timeScale().timeToCoordinate(bucketIn);
+                const barIn = replayMatchBarForIst(_replayChartBars, entryIst);
+                if (!barIn) return;
+                const xIn = _replayAlgoChart.timeScale().timeToCoordinate(barIn.time);
                 const yIn = _replayCandleSeries.priceToCoordinate(spotIn);
                 if (xIn == null || yIn == null) return;
 
-                let inLabelX = xIn + 8;
+                let inLabelX = xIn + 10;
                 let inLabelY = yIn - 8;
-                const inColor = "#34d399";
+                const inColor = "#fde047";
 
-                if (exTs && spotOut > 0) {
-                    const bucketOut = replay15mBucketUnix(exTs);
-                    const xOut = _replayAlgoChart.timeScale().timeToCoordinate(bucketOut);
+                const barOut = exitIst ? replayMatchBarForIst(_replayChartBars, exitIst) : null;
+                if (barOut && spotOut > 0) {
+                    const xOut = _replayAlgoChart.timeScale().timeToCoordinate(barOut.time);
                     const yOut = _replayCandleSeries.priceToCoordinate(spotOut);
                     if (xOut != null && yOut != null) {
                         const outColor = replayOutMarkerColor(t);
-                        let outLabelX = xOut + 8;
+                        let outLabelX = xOut + 10;
                         let outLabelY = yOut - 8;
-                        if (Math.abs(xIn - xOut) < 1 && Math.abs(yIn - yOut) < 14) {
-                            inLabelX = xIn - 38;
-                            inLabelY = yIn - 14;
-                            outLabelX = xOut + 10;
-                            outLabelY = yOut + 12;
+                        if (Math.abs(xIn - xOut) < 2 && Math.abs(yIn - yOut) < 16) {
+                            inLabelX = xIn - 42;
+                            inLabelY = yIn - 10;
+                            outLabelX = xOut + 12;
+                            outLabelY = yOut + 10;
                         }
-                        replayDrawCrossMark(ctx, xOut, yOut, outColor, 9, 2.2);
+                        replayDrawCrossMarkHiContrast(ctx, xOut, yOut, outColor, 11);
                         replayDrawSpotLabel(ctx, outLabelX, outLabelY, `OUT #${n}`, outColor);
                     }
                 }
 
-                replayDrawCrossMark(ctx, xIn, yIn, inColor, 9, 2.2);
+                replayDrawCrossMarkHiContrast(ctx, xIn, yIn, inColor, 11);
                 replayDrawSpotLabel(ctx, inLabelX, inLabelY, `IN #${n}`, inColor);
             });
         }
@@ -7143,10 +7202,11 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
             const host = document.getElementById("replayAlgoChartHost");
             _replayOverlayCanvas = document.getElementById("replayAlgoChartOverlay");
             if (!wrap || !host || typeof LightweightCharts === "undefined") return;
-            const filteredTrades = (trades || []).slice();
-            if (!filteredTrades.length) {
+            const protoTrades = (trades || []).filter(replayIsEma8PrototypeTrade);
+            if (!protoTrades.length) {
                 wrap.style.display = "none";
                 _replayOverlayTrades = [];
+                _replayChartBars = [];
                 return;
             }
             try {
@@ -7168,11 +7228,11 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                         upColor: "#22c55e", downColor: "#ef4444", borderVisible: false,
                         wickUpColor: "#22c55e", wickDownColor: "#ef4444",
                     });
-                    _replayEma4Series = _replayAlgoChart.addLineSeries({ color: "#22c55e", lineWidth: 2, title: "4 EMA" });
+                    _replayEma4Series = _replayAlgoChart.addLineSeries({ color: "#38bdf8", lineWidth: 2, title: "4 EMA" });
                     _replayEma8Series = _replayAlgoChart.addLineSeries({ color: "#ff1e38", lineWidth: 2, title: "8 EMA" });
                     replayEnsureChartOverlayHooks();
                 } else {
-                    _replayEma4Series.applyOptions({ color: "#22c55e", lineWidth: 2 });
+                    _replayEma4Series.applyOptions({ color: "#38bdf8", lineWidth: 2 });
                     _replayEma8Series.applyOptions({ color: "#ff1e38", lineWidth: 2 });
                     _replayAlgoChart.resize(host.clientWidth, host.clientHeight);
                 }
@@ -7181,11 +7241,12 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 }));
                 const e4 = cd.candles.filter(c => c.e4 != null).map(c => ({ time: c.time, value: c.e4 }));
                 const e8 = cd.candles.filter(c => c.e8 != null).map(c => ({ time: c.time, value: c.e8 }));
+                _replayChartBars = candles;
                 _replayCandleSeries.setData(candles);
                 _replayEma4Series.setData(e4);
                 _replayEma8Series.setData(e8);
                 _replayCandleSeries.setMarkers([]);
-                _replayOverlayTrades = filteredTrades;
+                _replayOverlayTrades = protoTrades;
                 _replayAlgoChart.timeScale().fitContent();
                 requestAnimationFrame(() => {
                     drawReplaySpotOverlay();
