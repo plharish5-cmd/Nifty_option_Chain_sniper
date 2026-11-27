@@ -1225,6 +1225,77 @@
             background-color: rgba(56, 189, 248, 0.04);
         }
 
+        /* Institutional Orders Book — full-width fit, no horizontal scroll, easy copy */
+        #ordersViewWrap {
+            overflow-x: hidden;
+            width: 100%;
+            max-width: 100%;
+        }
+        #ordersBookTable {
+            width: 100%;
+            max-width: 100%;
+            table-layout: fixed;
+            font-size: 11px;
+        }
+        #ordersBookTable th,
+        #ordersBookTable td {
+            padding: 5px 4px !important;
+            font-size: 11px !important;
+            line-height: 1.35;
+            vertical-align: top;
+        }
+        #ordersBookTable th,
+        #ordersBookTable td,
+        #ordersBookTable th *,
+        #ordersBookTable td * {
+            user-select: text !important;
+            -webkit-user-select: text !important;
+            cursor: text;
+        }
+        #ordersBookTable th {
+            white-space: normal;
+            word-break: break-word;
+            font-size: 11px !important;
+            font-weight: 700;
+        }
+        #ordersBookTable .orders-col-wrap {
+            white-space: normal;
+            word-break: break-word;
+        }
+        #ordersBookTable .orders-col-num {
+            white-space: nowrap;
+            font-variant-numeric: tabular-nums;
+        }
+        #ordersBookTable .status-badge {
+            font-size: 9px !important;
+            padding: 2px 4px !important;
+            line-height: 1.2;
+            white-space: normal;
+            display: inline-block;
+            max-width: 100%;
+        }
+        #ordersBookTable .orders-row-copy-btn {
+            cursor: pointer !important;
+            user-select: none !important;
+            -webkit-user-select: none !important;
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            border: 1px solid rgba(56, 189, 248, 0.45);
+            background: rgba(56, 189, 248, 0.12);
+            color: #7dd3fc;
+            font-weight: 700;
+        }
+        #ordersBookTable .orders-row-copy-btn:hover {
+            background: rgba(56, 189, 248, 0.25);
+        }
+        #ordersBookCopyAck {
+            font-size: 11px;
+            color: var(--emerald);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
         /* Buttons & Forms */
         button {
             cursor: pointer;
@@ -2691,9 +2762,11 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
 
             <!-- Orders Book Section (Problem 4 Source & Strategy Columns) -->
             <div class="card">
-                <h2>
+                <h2 style="flex-wrap:wrap; gap:8px;">
                     <span>📑 Institutional Orders Book</span>
+                    <button type="button" class="cyan-btn" onclick="copyOrdersBookTable()">📋 Copy Table</button>
                     <button type="button" class="emerald-btn" onclick="exportOrdersToExcel()">📥 Download Orders Book as Excel (.xls)</button>
+                    <span id="ordersBookCopyAck">Copied!</span>
                 </h2>
                 <div id="ordersSummary" style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:10px;"></div>
                 <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:10px; font-size:11.5px;">
@@ -2712,29 +2785,48 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                         <tbody id="tradesViewBody"></tbody>
                     </table>
                 </div>
-                <div id="ordersViewWrap" style="overflow-x:auto;">
-                    <table>
+                <div id="ordersViewWrap">
+                    <table id="ordersBookTable">
+                        <colgroup>
+                            <col style="width:4%;">
+                            <col style="width:7%;">
+                            <col style="width:9%;">
+                            <col style="width:11%;">
+                            <col style="width:8%;">
+                            <col style="width:10%;">
+                            <col style="width:5%;">
+                            <col style="width:4%;">
+                            <col style="width:7%;">
+                            <col style="width:7%;">
+                            <col style="width:7%;">
+                            <col style="width:7%;">
+                            <col style="width:7%;">
+                            <col style="width:9%;">
+                            <col style="width:9%;">
+                            <col style="width:10%;">
+                        </colgroup>
                         <thead>
                             <tr>
-                                <th>Order ID</th>
-                                <th>Book</th>
-                                <th>Symbol</th>
-                                <th>Source</th>
-                                <th>Strategy / Setup</th>
-                                <th>Side</th>
-                                <th>Qty</th>
-                                <th>Signal LTP</th>
-                                <th>SPOT ENTRY</th>
-                                <th>SPOT EXIT</th>
-                                <th>Option Entry</th>
-                                <th>Option Exit</th>
-                                <th>Timestamp</th>
-                                <th>Exit / Net P&amp;L</th>
-                                <th>Status</th>
+                                <th class="orders-col-num"></th>
+                                <th class="orders-col-num">Order ID</th>
+                                <th class="orders-col-wrap">Book</th>
+                                <th class="orders-col-wrap">Symbol</th>
+                                <th class="orders-col-wrap">Source</th>
+                                <th class="orders-col-wrap">Strategy / Setup</th>
+                                <th class="orders-col-num">Side</th>
+                                <th class="orders-col-num">Qty</th>
+                                <th class="orders-col-num">Signal LTP</th>
+                                <th class="orders-col-num">SPOT ENTRY</th>
+                                <th class="orders-col-num">SPOT EXIT</th>
+                                <th class="orders-col-num">Option Entry</th>
+                                <th class="orders-col-num">Option Exit</th>
+                                <th class="orders-col-wrap">Timestamp</th>
+                                <th class="orders-col-wrap">Exit / Net P&amp;L</th>
+                                <th class="orders-col-wrap">Status</th>
                             </tr>
                         </thead>
                         <tbody id="ordersTableBody">
-                            <tr><td colspan="15" style="text-align:center; color:var(--text-muted); padding:16px;">Loading order book...</td></tr>
+                            <tr><td colspan="16" style="text-align:center; color:var(--text-muted); padding:16px;">Loading order book...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -5565,6 +5657,79 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
 
         // ── Desk summaries (display only; computed from the rows already on screen) ──
         let ordersViewMode = "ORDERS", ordersDayMode = "ALL", lastOrdersPayload = [];
+        let _ordersBookVisibleRows = [];
+        const ORDERS_BOOK_HEADERS = [
+            "Order ID", "Book", "Symbol", "Source", "Strategy / Setup", "Side", "Qty", "Signal LTP",
+            "SPOT ENTRY", "SPOT EXIT", "Option Entry", "Option Exit", "Timestamp", "Exit / Net P&L", "Status",
+        ];
+
+        function ordersBookModeLabel(o) {
+            const mode = String(o.mode || "");
+            const isPaper = mode.includes("PAPER");
+            const isReal = mode.includes("LIVE");
+            return mode === "BOTH" ? "PAPER + REAL" : (isPaper ? "PAPER" : (isReal ? "REAL" : (mode || "—")));
+        }
+
+        function ordersBookExitPlain(o) {
+            const isExit = String(o.side || "") === "SELL";
+            if (!isExit) return "—";
+            const netPnl = Number(o.net_pnl || 0);
+            const pnl = `${netPnl >= 0 ? "+" : ""}${Math.round(netPnl)}`;
+            return `${pnl} | ${o.exit_reason || "EXIT"}`;
+        }
+
+        function ordersBookStatusPlain(o) {
+            return String(o.order_status || "—");
+        }
+
+        function ordersBookRowCells(o) {
+            return [
+                shortOrderId(o.order_id),
+                ordersBookModeLabel(o),
+                String(o.symbol || ""),
+                String(o.source || o.placed_by || "MANUAL"),
+                ordersEveryRowStrategyLabel(o),
+                String(o.side || ""),
+                String(o.qty ?? ""),
+                Number(o.signal_ltp || 0).toFixed(2),
+                fmtNiftySpot(o.nifty_spot_entry).replace(/<[^>]+>/g, ""),
+                fmtNiftySpot(o.nifty_spot_exit).replace(/<[^>]+>/g, ""),
+                fmtOptionPrem(o.option_entry).replace(/<[^>]+>/g, ""),
+                fmtOptionPrem(o.option_exit).replace(/<[^>]+>/g, ""),
+                formatDeskTimestamp(o.created_at),
+                ordersBookExitPlain(o),
+                ordersBookStatusPlain(o),
+            ];
+        }
+
+        function ordersBookTsvEscape(v) {
+            return String(v ?? "").replace(/\t/g, " ").replace(/\r?\n/g, " ");
+        }
+
+        async function flashOrdersBookCopyAck() {
+            const ack = document.getElementById("ordersBookCopyAck");
+            if (!ack) return;
+            ack.style.opacity = "1";
+            setTimeout(() => { ack.style.opacity = "0"; }, 1800);
+        }
+
+        async function copyOrdersBookTable() {
+            if (!_ordersBookVisibleRows.length) return;
+            const lines = [ORDERS_BOOK_HEADERS.map(ordersBookTsvEscape).join("\t")];
+            _ordersBookVisibleRows.forEach(o => {
+                lines.push(ordersBookRowCells(o).map(ordersBookTsvEscape).join("\t"));
+            });
+            await copyTextToClipboard(lines.join("\n"), null);
+            await flashOrdersBookCopyAck();
+        }
+
+        async function copyOrdersBookRow(idx) {
+            const o = _ordersBookVisibleRows[idx];
+            if (!o) return;
+            const line = ordersBookRowCells(o).map(ordersBookTsvEscape).join("\t");
+            await copyTextToClipboard(line, null);
+            await flashOrdersBookCopyAck();
+        }
         const _lastPosLtp = {};
         function deskCard(label, value, color, sub) {
             return '<div style="flex:1 1 130px; min-width:120px; background:rgba(15,23,42,0.7); border:1px solid rgba(148,163,184,0.22); border-radius:8px; padding:8px 10px;">' +
@@ -5870,40 +6035,42 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
             }
             renderOrdersSummary(filtered);
             renderTradesView(filtered);
+            _ordersBookVisibleRows = filtered.slice();
             if (filtered.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="15" style="text-align:center; color:var(--text-muted); padding:16px;">No orders found matching filters.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="16" style="text-align:center; color:var(--text-muted); padding:16px;">No orders found matching filters.</td></tr>`;
                 return;
             }
 
-            tbody.innerHTML = filtered.map(o => {
+            tbody.innerHTML = filtered.map((o, idx) => {
                 const mode = String(o.mode || "");
                 const isPaper = mode.includes("PAPER");
                 const isReal = mode.includes("LIVE");
-                const bookLabel = mode === "BOTH" ? "PAPER + REAL" : (isPaper ? "PAPER 📝" : (isReal ? "REAL 💰" : (mode || "—")));
+                const bookLabel = mode === "BOTH" ? "PAPER + REAL" : (isPaper ? "PAPER" : (isReal ? "REAL" : (mode || "—")));
                 const bookBadge = mode === "BOTH" ? "badge-gold" : (isReal ? "badge-bear" : "badge-side");
                 const isExit = String(o.side || "") === "SELL";
                 const netPnl = Number(o.net_pnl || 0);
                 const exitCell = isExit
                     ? `<b style="color:${netPnl >= 0 ? 'var(--emerald)' : 'var(--crimson)'};">${netPnl >= 0 ? '+' : ''}${Math.round(netPnl)}</b>
-                       <div style="color:var(--text-muted); font-size:10px; font-family:var(--font-mono);">${o.exit_reason || 'EXIT'}</div>`
+                       <div style="color:var(--text-muted); font-size:9.5px; font-family:var(--font-mono); word-break:break-word; white-space:normal;">${o.exit_reason || 'EXIT'}</div>`
                     : `<span style="color:var(--text-muted);">—</span>`;
                 return `
                 <tr${isExit ? ` style="background:rgba(239,68,68,0.05);"` : ``}>
-                    <td title="${o.order_id}"><code>${shortOrderId(o.order_id)}</code></td>
-                    <td><span class="status-badge ${bookBadge}" style="font-size:10px;">${bookLabel}</span></td>
-                    <td><b style="font-family:var(--font-mono);">${o.symbol}</b></td>
-                    <td><span class="status-badge ${(o.source || o.placed_by || '').includes('AUTO') ? 'badge-bull' : 'badge-gold'}">${o.source || o.placed_by || 'MANUAL MATRIX ✋'}</span></td>
-                    <td><span style="font-family:var(--font-mono); font-size:11.5px;">${ordersEveryRowStrategyLabel(o)}</span></td>
-                    <td style="color:${o.side === 'BUY' ? 'var(--emerald)' : 'var(--crimson)'}; font-weight:700;">${o.side}</td>
-                    <td><b>${o.qty}</b></td>
-                    <td>₹${Number(o.signal_ltp || 0).toFixed(2)}</td>
-                    <td>${fmtNiftySpot(o.nifty_spot_entry)}</td>
-                    <td>${fmtNiftySpot(o.nifty_spot_exit)}</td>
-                    <td>${fmtOptionPrem(o.option_entry)}</td>
-                    <td>${fmtOptionPrem(o.option_exit)}</td>
-                    <td style="color:var(--text-dim);">${formatDeskTimestamp(o.created_at)}</td>
-                    <td>${exitCell}</td>
-                    <td>${orderRejectionStatusHtml(o)}</td>
+                    <td class="orders-col-num"><button type="button" class="orders-row-copy-btn" title="Copy row (TSV)" onclick="event.preventDefault(); event.stopPropagation(); copyOrdersBookRow(${idx});">Copy</button></td>
+                    <td class="orders-col-num" title="${o.order_id}"><code>${shortOrderId(o.order_id)}</code></td>
+                    <td class="orders-col-wrap"><span class="status-badge ${bookBadge}">${bookLabel}</span></td>
+                    <td class="orders-col-wrap"><b style="font-family:var(--font-mono); font-weight:600;">${o.symbol}</b></td>
+                    <td class="orders-col-wrap"><span class="status-badge ${(o.source || o.placed_by || '').includes('AUTO') ? 'badge-bull' : 'badge-gold'}">${o.source || o.placed_by || 'MANUAL'}</span></td>
+                    <td class="orders-col-wrap"><span style="font-family:var(--font-mono);">${ordersEveryRowStrategyLabel(o)}</span></td>
+                    <td class="orders-col-num" style="color:${o.side === 'BUY' ? 'var(--emerald)' : 'var(--crimson)'}; font-weight:700;">${o.side}</td>
+                    <td class="orders-col-num"><b>${o.qty}</b></td>
+                    <td class="orders-col-num">₹${Number(o.signal_ltp || 0).toFixed(2)}</td>
+                    <td class="orders-col-num">${fmtNiftySpot(o.nifty_spot_entry)}</td>
+                    <td class="orders-col-num">${fmtNiftySpot(o.nifty_spot_exit)}</td>
+                    <td class="orders-col-num">${fmtOptionPrem(o.option_entry)}</td>
+                    <td class="orders-col-num">${fmtOptionPrem(o.option_exit)}</td>
+                    <td class="orders-col-wrap" style="color:var(--text-dim);">${formatDeskTimestamp(o.created_at)}</td>
+                    <td class="orders-col-wrap">${exitCell}</td>
+                    <td class="orders-col-wrap">${orderRejectionStatusHtml(o)}</td>
                 </tr>
             `;
             }).join("");
