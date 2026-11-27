@@ -7278,75 +7278,46 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
             return best;
         }
 
-        function replayTouchKindFromAudit(audit, setup) {
-            const blob = String(audit?.reason || "") + " " + String(setup || "");
-            if (/retouch|re-touch|RETOUCH/i.test(blob)) return "RETOUCH";
-            if (/first touch|first_touch|FIRST TOUCH/i.test(blob)) return "FIRST TOUCH";
-            if (/touch|TOUCH/i.test(blob)) return "RETOUCH";
-            return "FIRST TOUCH";
-        }
-
         function replayHomeworkLiveTag(t) {
             return replayExecutionBookBadge(t).label === "REAL ALGO" ? " [REAL ALGO]" : "";
         }
 
-        function replayExplicitEntryFromAuditOrSetup(t, audit) {
-            const side = replayTradeSide(t);
-            const setup = String(t.setup_name || t.setup || "");
-            const setupU = setup.toUpperCase();
-            const reason = String(audit?.reason || "").trim();
-            const blob = (setupU + " " + reason).toUpperCase();
-
-            if (/STAGE\s*2|STAGE_2/.test(blob)) return `STAGE 2 — ${side} SIGNAL`;
-            if (/STAGE\s*3|STAGE_3/.test(blob)) return `STAGE 3 — ${side} SIGNAL`;
-            if (/1H FLAGSHIP|1 HR FLAGSHIP|H1_8EMA|FLAGSHIP/.test(blob)) return `1H FLAGSHIP — ${side} SIGNAL`;
-            if (/8600|TICKET/.test(blob)) return `8600 TICKET — ${side} SIGNAL`;
-
-            const belowSetup = /PREVIOUS CANDLE CLOSED BELOW 8 EMA|15M CLOSE BELOW 8 EMA|CLOSED BELOW 8 EMA/i.test(setup);
-            const aboveSetup = /PREVIOUS CANDLE CLOSED ABOVE 8 EMA|15M CLOSE ABOVE 8 EMA|CLOSED ABOVE 8 EMA/i.test(setup);
-            const belowReason = /below.*8 ema|closed below 8 ema|15m close below/i.test(reason);
-            const aboveReason = /above.*8 ema|closed above 8 ema|15m close above/i.test(reason);
-
-            if (belowSetup || belowReason) {
-                if (replayTouchKindFromAudit(audit, setup) === "RETOUCH" || /re-?touch/i.test(blob)) {
-                    return `PREVIOUS CANDLE BELOW 8 EMA — RE-TOUCH (${side} ARM STILL ON)`;
-                }
-                return "PREVIOUS CANDLE BELOW 8 EMA";
-            }
-            if (aboveSetup || aboveReason) {
-                if (replayTouchKindFromAudit(audit, setup) === "RETOUCH" || /re-?touch/i.test(blob)) {
-                    return `PREVIOUS CANDLE ABOVE 8 EMA — RE-TOUCH (${side} ARM STILL ON)`;
-                }
-                return "PREVIOUS CANDLE ABOVE 8 EMA";
-            }
-            if (reason && audit) {
-                if (/re-?touch|retouch/i.test(reason)) {
-                    const ab = side === "CE" ? "ABOVE" : "BELOW";
-                    return `PREVIOUS CANDLE ${ab} 8 EMA — RE-TOUCH (${side} ARM STILL ON)`;
-                }
-                if (/below.*8 ema/i.test(reason)) return "PREVIOUS CANDLE BELOW 8 EMA";
-                if (/above.*8 ema/i.test(reason)) return "PREVIOUS CANDLE ABOVE 8 EMA";
-                return reason.replace(/\s+/g, " ").toUpperCase();
-            }
-            return "";
+        function replayIsEma8HomeworkStrategy(strategyLabel) {
+            return strategyLabel === "8 EMA Prototype"
+                || strategyLabel === "8 EMA Reversal"
+                || strategyLabel === "1 HR Flagship";
         }
 
-        function replayInferEntryReason(t, prevInLane, audit) {
-            const side = replayTradeSide(t);
-            const prevReason = prevInLane ? replayExitReason(prevInLane) : "";
-            const prevSide = prevInLane ? replayTradeSide(prevInLane) : null;
+        function replayNonEmaEntryNarrative(strategyLabel, side) {
+            if (strategyLabel === "Stage 2") return `STAGE 2 — ${side} SIGNAL`;
+            if (strategyLabel === "Stage 3") return `STAGE 3 — ${side} SIGNAL`;
+            if (strategyLabel === "8600 Ticket") return `8600 TICKET — ${side} SIGNAL`;
+            return `${String(strategyLabel || "STRATEGY").toUpperCase()} — ${side} SIGNAL`;
+        }
 
-            const explicit = replayExplicitEntryFromAuditOrSetup(t, audit);
-            if (explicit) return explicit;
+        function replayInferEntryReason(trade, prevLaneTrade, strategyLabel) {
+            const side = replayTradeSide(trade);
+            const strat = strategyLabel || replayStrategyHomeworkLabel(trade);
 
-            if (prevInLane && /OPPOSITE_8EMA/.test(prevReason)) {
+            if (!replayIsEma8HomeworkStrategy(strat)) {
+                return replayNonEmaEntryNarrative(strat, side);
+            }
+
+            if (!prevLaneTrade) {
+                return side === "PE" ? "PREVIOUS CANDLE BELOW 8 EMA" : "PREVIOUS CANDLE ABOVE 8 EMA";
+            }
+
+            const prevReason = replayExitReason(prevLaneTrade);
+            const prevSide = replayTradeSide(prevLaneTrade);
+
+            if (/OPPOSITE_8EMA/.test(prevReason)) {
                 return `OPP 8 EMA CLOSE -> ${side} ARMED`;
             }
-            if (prevInLane && /SPOT_SL_HIT|OPTION_SL_HIT|INITIAL_SL_HIT/.test(prevReason)) {
+            if (/SPOT_SL_HIT|OPTION_SL_HIT|INITIAL_SL_HIT/.test(prevReason)) {
                 if (prevSide === side) return `RE-ENTRY AFTER SL — ${side} ARM STILL ON`;
                 return `OPP 8 EMA CLOSE -> ${side} ARMED`;
             }
-            if (prevInLane && /SPOT_TRAIL_EXIT|OPTION_TARGET_HIT/.test(prevReason)) {
+            if (/SPOT_TRAIL_EXIT|OPTION_TARGET_HIT/.test(prevReason)) {
                 if (prevSide === side) {
                     return side === "PE"
                         ? "PREVIOUS CANDLE BELOW 8 EMA — RE-TOUCH (PE ARM STILL ON)"
@@ -7355,13 +7326,12 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 return `OPP 8 EMA CLOSE -> ${side} ARMED`;
             }
 
-            const strat = replayStrategyHomeworkLabel(t);
-            if (strat === "Stage 2") return `STAGE 2 — ${side} SIGNAL`;
-            if (strat === "Stage 3") return `STAGE 3 — ${side} SIGNAL`;
-            if (strat === "1 HR Flagship") return `1H FLAGSHIP — ${side} SIGNAL`;
-            if (strat === "8600 Ticket") return `8600 TICKET — ${side} SIGNAL`;
-            if (side === "PE") return "PREVIOUS CANDLE BELOW 8 EMA";
-            return "PREVIOUS CANDLE ABOVE 8 EMA";
+            if (prevSide === side) {
+                return side === "PE"
+                    ? "PREVIOUS CANDLE BELOW 8 EMA — PE ARM STILL ON"
+                    : "PREVIOUS CANDLE ABOVE 8 EMA — CE ARM STILL ON";
+            }
+            return `OPP 8 EMA CLOSE -> ${side} ARMED`;
         }
 
         function replayPostExitLine(t, nextInLane) {
@@ -7393,7 +7363,8 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
 
         function buildReplayTradeCallout(t, idx, prevInLane, nextInLane, audit) {
             const side = replayTradeSide(t);
-            const entryReason = replayInferEntryReason(t, prevInLane, audit) || "SIGNAL";
+            const stratLabel = replayStrategyHomeworkLabel(t);
+            const entryReason = replayInferEntryReason(t, prevInLane, stratLabel);
             const se = Number(t.index_entry);
             const sx = Number(t.index_exit);
             const oe = Number(t.option_entry);
