@@ -3003,7 +3003,7 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                         <button type="button" class="emerald-btn" id="replayCopyHomeworkBtn" onclick="copyReplayHomework()">📋 Copy All Homework</button>
                         <span id="replayCopyHomeworkAck" style="font-size:11px; color:var(--emerald); opacity:0; transition:opacity 0.3s;">Copied!</span>
                     </div>
-                    <div id="replayHomeworkCards" style="display:flex; flex-direction:column; gap:10px; max-height:520px; overflow:auto;"></div>
+                    <div id="replayHomeworkCards" style="display:flex; flex-direction:column; gap:0; max-height:520px; overflow:auto; border:1px solid rgba(148,163,184,0.22); border-radius:8px; overflow:hidden;"></div>
                     <pre id="replayHomeworkText" style="display:none; margin:0;"></pre>
                 </div>
 
@@ -7171,6 +7171,16 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
             return `${String(parseInt(m[1], 10)).padStart(2, "0")}:${m[2]}`;
         }
 
+        /** 15m candle open bucket from trade entry time (display only — not copied). */
+        function replay15mCandleOpenFromEntry(ts) {
+            const m = String(ts || "").match(/(\d{1,2}):(\d{2})/);
+            if (!m) return "—";
+            const hour = Number(parseInt(m[1], 10));
+            const mm = Number(m[2]);
+            const bucketMin = String(Math.floor(mm / 15) * 15).padStart(2, "0");
+            return `${hour}:${bucketMin}`;
+        }
+
         function replaySortKey(t) {
             if (t.entry_unix != null) return Number(t.entry_unix);
             const raw = String(t.entry_ist || t.entry_time || "");
@@ -7441,8 +7451,13 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 cards.innerHTML = '<div style="color:var(--text-muted); font-size:12px; padding:8px;">No trades for this filter — homework empty.</div>';
                 return;
             }
-            cards.innerHTML = sorted.map((t, i) => {
+            const gridHead = `<div style="display:grid; grid-template-columns:76px 1fr; background:rgba(30,41,59,0.9); border-bottom:1px solid rgba(148,163,184,0.24);">
+                <div style="padding:6px 4px; text-align:center; font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:0.04em; color:#94a3b8; border-right:1px solid rgba(148,163,184,0.24);">15m Candle</div>
+                <div style="padding:6px 10px;"></div>
+            </div>`;
+            cards.innerHTML = gridHead + sorted.map((t, i) => {
                 const n = i + 1;
+                const candle = replay15mCandleOpenFromEntry(t.entry_ist || t.entry_time);
                 const callout = _replayTradeCallouts[n] || buildReplayTradeCallout(
                     t, n,
                     prevTradeInLane(sorted, i),
@@ -7450,12 +7465,15 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                     replayAuditMatchTrade(t, _replayDecisionAudit)
                 );
                 const esc = callout.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-                return `<div style="border:1px solid rgba(148,163,184,0.25); border-radius:8px; padding:10px 12px; background:#0b1220;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
-                        <span style="font-size:11px; font-weight:700; color:#94a3b8;">Trade #${n}</span>
-                        <button type="button" class="cyan-btn" style="padding:4px 10px; font-size:11px;" onclick="copyReplayTradeCallout(${n})">Copy #${n}</button>
+                return `<div style="display:grid; grid-template-columns:76px 1fr; border-bottom:1px solid rgba(148,163,184,0.2); background:#0b1220;">
+                    <div style="display:flex; align-items:center; justify-content:center; padding:8px 4px; font-family:var(--font-mono); font-size:12px; font-weight:700; color:#38bdf8; border-right:1px solid rgba(148,163,184,0.24); user-select:text;">${candle}</div>
+                    <div style="padding:10px 12px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
+                            <span style="font-size:11px; font-weight:700; color:#94a3b8;">Trade #${n}</span>
+                            <button type="button" class="cyan-btn" style="padding:4px 10px; font-size:11px;" onclick="copyReplayTradeCallout(${n})">Copy #${n}</button>
+                        </div>
+                        <pre style="margin:0; font-family:var(--font-mono); font-size:11.5px; line-height:1.45; color:#e2e8f0; white-space:pre-wrap;">${esc}</pre>
                     </div>
-                    <pre style="margin:0; font-family:var(--font-mono); font-size:11.5px; line-height:1.45; color:#e2e8f0; white-space:pre-wrap;">${esc}</pre>
                 </div>`;
             }).join("");
         }
