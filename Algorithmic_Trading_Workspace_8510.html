@@ -7286,37 +7286,82 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
             return "FIRST TOUCH";
         }
 
-        function replayInferEntryReason(t, prevInLane, audit) {
+        function replayHomeworkLiveTag(t) {
+            return replayExecutionBookBadge(t).label === "REAL ALGO" ? " [REAL ALGO]" : "";
+        }
+
+        function replayExplicitEntryFromAuditOrSetup(t, audit) {
             const side = replayTradeSide(t);
             const setup = String(t.setup_name || t.setup || "");
-            const reason = String(audit?.reason || "");
-            if (prevInLane && /OPPOSITE_8EMA/.test(replayExitReason(prevInLane))) {
-                return `(OPP 8 EMA CLOSE -> ${side} ARMED)`;
+            const setupU = setup.toUpperCase();
+            const reason = String(audit?.reason || "").trim();
+            const blob = (setupU + " " + reason).toUpperCase();
+
+            if (/STAGE\s*2|STAGE_2/.test(blob)) return `STAGE 2 — ${side} SIGNAL`;
+            if (/STAGE\s*3|STAGE_3/.test(blob)) return `STAGE 3 — ${side} SIGNAL`;
+            if (/1H FLAGSHIP|1 HR FLAGSHIP|H1_8EMA|FLAGSHIP/.test(blob)) return `1H FLAGSHIP — ${side} SIGNAL`;
+            if (/8600|TICKET/.test(blob)) return `8600 TICKET — ${side} SIGNAL`;
+
+            const belowSetup = /PREVIOUS CANDLE CLOSED BELOW 8 EMA|15M CLOSE BELOW 8 EMA|CLOSED BELOW 8 EMA/i.test(setup);
+            const aboveSetup = /PREVIOUS CANDLE CLOSED ABOVE 8 EMA|15M CLOSE ABOVE 8 EMA|CLOSED ABOVE 8 EMA/i.test(setup);
+            const belowReason = /below.*8 ema|closed below 8 ema|15m close below/i.test(reason);
+            const aboveReason = /above.*8 ema|closed above 8 ema|15m close above/i.test(reason);
+
+            if (belowSetup || belowReason) {
+                if (replayTouchKindFromAudit(audit, setup) === "RETOUCH" || /re-?touch/i.test(blob)) {
+                    return `PREVIOUS CANDLE BELOW 8 EMA — RE-TOUCH (${side} ARM STILL ON)`;
+                }
+                return "PREVIOUS CANDLE BELOW 8 EMA";
             }
-            if (/PREVIOUS CANDLE CLOSED BELOW 8 EMA/i.test(setup)) {
-                return `(PREVIOUS CANDLE CLOSED BELOW 8 EMA — ${replayTouchKindFromAudit(audit, setup)})`;
+            if (aboveSetup || aboveReason) {
+                if (replayTouchKindFromAudit(audit, setup) === "RETOUCH" || /re-?touch/i.test(blob)) {
+                    return `PREVIOUS CANDLE ABOVE 8 EMA — RE-TOUCH (${side} ARM STILL ON)`;
+                }
+                return "PREVIOUS CANDLE ABOVE 8 EMA";
             }
-            if (/PREVIOUS CANDLE CLOSED ABOVE 8 EMA/i.test(setup)) {
-                return `(PREVIOUS CANDLE CLOSED ABOVE 8 EMA — ${replayTouchKindFromAudit(audit, setup)})`;
-            }
-            if (prevInLane && /SPOT_SL_HIT|OPTION_SL_HIT/.test(replayExitReason(prevInLane))
-                && replayTradeSide(prevInLane) === side) {
-                return `(RE-ENTRY AFTER SL — ${side} ARM STILL ON)`;
-            }
-            if (/below.*8 ema|closed below/i.test(reason)) {
-                return `(PREVIOUS CANDLE CLOSED BELOW 8 EMA — ${replayTouchKindFromAudit(audit, setup)})`;
-            }
-            if (/above.*8 ema|closed above/i.test(reason)) {
-                return `(PREVIOUS CANDLE CLOSED ABOVE 8 EMA — ${replayTouchKindFromAudit(audit, setup)})`;
-            }
-            if (/retouch|touch/i.test(reason)) {
-                const aboveBelow = side === "CE" ? "ABOVE" : "BELOW";
-                return `(PREVIOUS CANDLE CLOSED ${aboveBelow} 8 EMA — ${replayTouchKindFromAudit(audit, setup)})`;
-            }
-            if (prevInLane && /OPPOSITE_8EMA/.test(replayExitReason(prevInLane))) {
-                return `(TRIGGERED AFTER OPP 8 EMA CLOSE)`;
+            if (reason && audit) {
+                if (/re-?touch|retouch/i.test(reason)) {
+                    const ab = side === "CE" ? "ABOVE" : "BELOW";
+                    return `PREVIOUS CANDLE ${ab} 8 EMA — RE-TOUCH (${side} ARM STILL ON)`;
+                }
+                if (/below.*8 ema/i.test(reason)) return "PREVIOUS CANDLE BELOW 8 EMA";
+                if (/above.*8 ema/i.test(reason)) return "PREVIOUS CANDLE ABOVE 8 EMA";
+                return reason.replace(/\s+/g, " ").toUpperCase();
             }
             return "";
+        }
+
+        function replayInferEntryReason(t, prevInLane, audit) {
+            const side = replayTradeSide(t);
+            const prevReason = prevInLane ? replayExitReason(prevInLane) : "";
+            const prevSide = prevInLane ? replayTradeSide(prevInLane) : null;
+
+            const explicit = replayExplicitEntryFromAuditOrSetup(t, audit);
+            if (explicit) return explicit;
+
+            if (prevInLane && /OPPOSITE_8EMA/.test(prevReason)) {
+                return `OPP 8 EMA CLOSE -> ${side} ARMED`;
+            }
+            if (prevInLane && /SPOT_SL_HIT|OPTION_SL_HIT|INITIAL_SL_HIT/.test(prevReason)) {
+                if (prevSide === side) return `RE-ENTRY AFTER SL — ${side} ARM STILL ON`;
+                return `OPP 8 EMA CLOSE -> ${side} ARMED`;
+            }
+            if (prevInLane && /SPOT_TRAIL_EXIT|OPTION_TARGET_HIT/.test(prevReason)) {
+                if (prevSide === side) {
+                    return side === "PE"
+                        ? "PREVIOUS CANDLE BELOW 8 EMA — RE-TOUCH (PE ARM STILL ON)"
+                        : "PREVIOUS CANDLE ABOVE 8 EMA — RE-TOUCH (CE ARM STILL ON)";
+                }
+                return `OPP 8 EMA CLOSE -> ${side} ARMED`;
+            }
+
+            const strat = replayStrategyHomeworkLabel(t);
+            if (strat === "Stage 2") return `STAGE 2 — ${side} SIGNAL`;
+            if (strat === "Stage 3") return `STAGE 3 — ${side} SIGNAL`;
+            if (strat === "1 HR Flagship") return `1H FLAGSHIP — ${side} SIGNAL`;
+            if (strat === "8600 Ticket") return `8600 TICKET — ${side} SIGNAL`;
+            if (side === "PE") return "PREVIOUS CANDLE BELOW 8 EMA";
+            return "PREVIOUS CANDLE ABOVE 8 EMA";
         }
 
         function replayPostExitLine(t, nextInLane) {
@@ -7325,8 +7370,8 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
             if (/^EOD_SQUARE_OFF/.test(reason)) return "SESSION CLOSED (EOD)";
             if (/OPPOSITE_8EMA/.test(reason)) {
                 return side === "PE"
-                    ? "OPP 8 EMA CLOSE -> CE TRIGGERED"
-                    : "OPP 8 EMA CLOSE -> PE TRIGGERED";
+                    ? "NEXT: OPP 8 EMA CLOSE -> CE TRIGGERED"
+                    : "NEXT: OPP 8 EMA CLOSE -> PE TRIGGERED";
             }
             const slish = /SPOT_SL_HIT|OPTION_SL_HIT|SPOT_TRAIL_EXIT|OPTION_TARGET_HIT|SL_HIT|TRAIL/.test(reason);
             if (!slish) return "";
@@ -7348,9 +7393,7 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
 
         function buildReplayTradeCallout(t, idx, prevInLane, nextInLane, audit) {
             const side = replayTradeSide(t);
-            const book = replayExecutionBookBadge(t).label;
-            const strat = replayStrategyHomeworkLabel(t);
-            const entryTag = replayInferEntryReason(t, prevInLane, audit);
+            const entryReason = replayInferEntryReason(t, prevInLane, audit) || "SIGNAL";
             const se = Number(t.index_entry);
             const sx = Number(t.index_exit);
             const oe = Number(t.option_entry);
@@ -7363,7 +7406,7 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
             const optX = Number.isFinite(ox) ? ox.toFixed(2) : "—";
             const reason = replayExitReason(t);
             const lines = [];
-            lines.push(`#${idx} ${side} [${book}]${entryTag ? " " + entryTag : ""}`);
+            lines.push(`#${idx} ${side} [${entryReason}]${replayHomeworkLiveTag(t)}`);
             lines.push(`IN : ${spotE} (${optE}) @ ${entHm}`);
             if (Number.isFinite(sx) && exHm !== "—") {
                 lines.push(`OUT: ${spotX} (${optX}) @ ${exHm} | ${reason}`);
@@ -7406,48 +7449,15 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 const prevInLane = prevTradeInLane(sorted, i);
                 const nextInLane = replayNextInLane(sorted, i);
                 const audit = replayAuditMatchTrade(t, _replayDecisionAudit);
-                const side = replayTradeSide(t);
-                const book = replayExecutionBookBadge(t).label;
-                const strat = replayStrategyHomeworkLabel(t);
-                const entryTag = replayInferEntryReason(t, prevInLane, audit);
-                const ctxTxt = entryTag ? ` ${entryTag}` : "";
-                lines.push(`#${n}, ${side} TRADE [${book}] — ${strat}${ctxTxt}`);
-                const se = Number(t.index_entry);
-                const sx = Number(t.index_exit);
-                const oe = Number(t.option_entry);
-                const ox = Number(t.option_exit);
-                const entHm = replayHmFromTs(t.entry_ist || t.entry_time);
-                const exHm = replayHmFromTs(t.exit_ist || t.exit_time);
-                const spotE = Number.isFinite(se) ? se.toFixed(2) : "—";
-                const spotX = Number.isFinite(sx) ? sx.toFixed(2) : "—";
-                const optE = Number.isFinite(oe) ? oe.toFixed(2) : "—";
-                const optX = Number.isFinite(ox) ? ox.toFixed(2) : "—";
-                lines.push(`ENTRY: @ ${spotE} (${optE}); ${entHm}`);
-                const reason = replayExitReason(t);
-                if (Number.isFinite(sx) && exHm !== "—") {
-                    lines.push(`EXIT: @ ${spotX} (${optX}); ${exHm} ${reason}`);
-                } else {
-                    lines.push(`EXIT: OPEN`);
-                }
+                const callout = buildReplayTradeCallout(t, n, prevInLane, nextInLane, audit);
+                _replayTradeCallouts[n] = callout;
+                lines.push(callout);
                 const np = Number(t.net_pnl);
                 if (Number.isFinite(np)) {
                     net += np;
-                    if (np >= 0) {
-                        wins += 1;
-                        lines.push(`PROFIT: +${Math.round(np)} RUPEES`);
-                    } else {
-                        losses += 1;
-                        lines.push(`LOSS: -${Math.round(Math.abs(np))} RUPEES`);
-                    }
-                } else {
-                    const pts = Number(t.st_pnl_pts);
-                    if (Number.isFinite(pts)) {
-                        lines.push(pts >= 0 ? `PROFIT: +${pts.toFixed(1)} NIFTY PTS` : `LOSS: -${Math.abs(pts).toFixed(1)} NIFTY PTS`);
-                    }
+                    if (np >= 0) wins += 1;
+                    else losses += 1;
                 }
-                const post = replayPostExitLine(t, nextInLane);
-                if (post) lines.push(post);
-                _replayTradeCallouts[n] = buildReplayTradeCallout(t, n, prevInLane, nextInLane, audit);
                 lines.push("");
             });
             const netRound = Math.round(net);
