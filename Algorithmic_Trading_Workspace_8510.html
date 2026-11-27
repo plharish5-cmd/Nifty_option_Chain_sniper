@@ -3027,11 +3027,13 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 <div id="replayAlgoChartWrap" style="display:none; margin-bottom:16px; border:1px solid var(--border-subtle); border-radius:8px; padding:8px 10px 4px; background:rgba(9,14,26,0.85);">
                     <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px; flex-wrap:wrap;">
                         <span style="font-size:12px; font-weight:700; color:#38bdf8;">ALGO CHART — 15m Nifty spot + 4/8 EMA</span>
-                        <span id="replayAlgoChartSubtitle" style="font-size:10px; color:var(--text-muted);">Bright Red = 8 EMA · Cyan = 4 EMA · ✕ IN #N / ✕ OUT #N = exact 8 EMA Prototype Nifty spot entry &amp; exit levels</span>
+                        <span id="replayAlgoChartSubtitle" style="font-size:10px; color:var(--text-muted);">Bright Red = 8 EMA · Cyan = 4 EMA · Yellow ✕ #N = Entry · Red/Green ✕ #N = Exit (exact 8 EMA Prototype spot levels — hover any ✕ for details)</span>
                     </div>
                     <div id="replayAlgoChart" style="position:relative; width:100%; height:420px;">
-                        <div id="replayAlgoChartHost" style="width:100%; height:100%;"></div>
-                        <canvas id="replayAlgoChartOverlay" style="position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:20;"></canvas>
+                        <div id="replayAlgoChartHost" style="position:relative; width:100%; height:100%; overflow:hidden;">
+                            <canvas id="replayAlgoChartOverlay" style="position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:20;"></canvas>
+                        </div>
+                        <div id="replayChartHoverTip" style="display:none; position:absolute; z-index:25; pointer-events:none; max-width:340px; padding:8px 10px; border-radius:6px; border:1px solid rgba(56,189,248,0.45); background:rgba(11,18,32,0.94); font-size:10px; line-height:1.4; color:#e2e8f0; font-family:var(--font-mono); box-shadow:0 4px 16px rgba(0,0,0,0.45);"></div>
                     </div>
                 </div>
 
@@ -7003,8 +7005,10 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
         let _replayOverlayCanvas = null;
         let _replayOverlayTrades = [];
         let _replayChartBars = [];
+        let _replayOverlayHitPoints = [];
         let _replayOverlayRangeUnsub = null;
         let _replayChartResizeObs = null;
+        const REPLAY_SESSION_OPEN_MINS = 9 * 60 + 15;
 
         function replayIsEma8PrototypeTrade(t) {
             const sid = String(t.strategy_id || "").toUpperCase();
@@ -7024,43 +7028,37 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
             return h * 60 + min;
         }
 
-        function replayFloor15SessionMins(mins) {
-            return Math.floor(mins / 15) * 15;
+        function replayBarIndexForIst(bars, istRaw) {
+            const M = replayIstSessionMins(istRaw);
+            if (M == null || !(bars || []).length) return -1;
+            let idx = Math.floor((M - REPLAY_SESSION_OPEN_MINS) / 15);
+            if (idx < 0) idx = 0;
+            if (idx >= bars.length) idx = bars.length - 1;
+            return idx;
         }
 
-        function replayBarIstSessionMins(barTime) {
-            const t = Number(barTime);
-            if (!Number.isFinite(t)) return null;
-            const ms = t > 1e12 ? t : t * 1000;
-            const fmt = new Intl.DateTimeFormat("en-GB", {
-                timeZone: "Asia/Kolkata",
-                hour: "2-digit",
-                minute: "2-digit",
-                hour12: false,
-            }).formatToParts(new Date(ms));
-            const hh = parseInt(fmt.find(p => p.type === "hour")?.value || "0", 10);
-            const mm = parseInt(fmt.find(p => p.type === "minute")?.value || "0", 10);
-            return hh * 60 + mm;
+        function replayBarForIst(bars, istRaw) {
+            const idx = replayBarIndexForIst(bars, istRaw);
+            return idx >= 0 ? bars[idx] : null;
         }
 
-        function replayMatchBarForIst(bars, istRaw) {
-            const mins = replayIstSessionMins(istRaw);
-            if (mins == null || !(bars || []).length) return null;
-            const target = replayFloor15SessionMins(mins);
-            let best = null;
-            let bestD = 1e9;
-            for (const b of bars) {
-                const bm = replayBarIstSessionMins(b.time);
-                if (bm == null) continue;
-                const bb = replayFloor15SessionMins(bm);
-                if (bb === target) return b;
-                const d = Math.abs(bb - target);
-                if (d < bestD) {
-                    bestD = d;
-                    best = b;
-                }
-            }
-            return best;
+        function replayIstHmShort(raw) {
+            const m = String(raw || "").match(/(\d{1,2}):(\d{2})/);
+            if (!m) return "—";
+            return `${String(parseInt(m[1], 10)).padStart(2, "0")}:${m[2]}`;
+        }
+
+        function replayChartSide(t) {
+            const d = String(t.direction || "").toUpperCase();
+            if (d === "LONG" || d === "BUY") return "CE";
+            if (d === "SHORT" || d === "SELL") return "PE";
+            const sym = String(t.contract_symbol || t.symbol || "").toUpperCase();
+            if (/\bPE\b/.test(sym)) return "PE";
+            return "CE";
+        }
+
+        function replayChartExitText(t) {
+            return String(t.outcome || t.result || t.exit_reason || "EXIT").trim().toUpperCase();
         }
 
         function replayParseTradeUnix(raw, fallbackUnix) {
@@ -7104,38 +7102,77 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
             strokeX();
         }
 
-        function replayDrawSpotLabel(ctx, x, y, text, color) {
+        function replayMeasureLabel(ctx, text) {
             ctx.font = "600 10px var(--font-mono, monospace)";
-            ctx.fillStyle = "rgba(11, 18, 32, 0.88)";
             const padX = 4;
             const w = ctx.measureText(text).width + padX * 2;
+            return { w, h: 14, padX };
+        }
+
+        function replayDrawSpotLabelAt(ctx, x, y, text, color) {
+            const { w, padX } = replayMeasureLabel(ctx, text);
+            ctx.fillStyle = "rgba(11, 18, 32, 0.88)";
             ctx.fillRect(x, y - 10, w, 14);
             ctx.fillStyle = color;
             ctx.fillText(text, x + padX, y);
+            return { x, y: y - 10, w, h: 14 };
+        }
+
+        function replayLabelOverlaps(placed, box) {
+            return placed.some(p => p.x < box.x + box.w && p.x + p.w > box.x && p.y < box.y + box.h && p.y + p.h > box.y);
+        }
+
+        function replayPlaceSpotLabel(ctx, placed, anchorX, anchorY, text, color, mode) {
+            const { w, h } = replayMeasureLabel(ctx, text);
+            let lx = mode === "entry" ? anchorX - w - 6 : anchorX + 8;
+            let ly = mode === "entry" ? anchorY - h - 8 : anchorY + 10;
+            for (let step = 0; step < 12; step++) {
+                const box = { x: lx, y: ly, w, h };
+                if (!replayLabelOverlaps(placed, box)) {
+                    placed.push(box);
+                    replayDrawSpotLabelAt(ctx, lx, ly + 10, text, color);
+                    return;
+                }
+                ly += (step % 2 === 0 ? -13 : 13);
+            }
+            placed.push({ x: lx, y: ly, w, h });
+            replayDrawSpotLabelAt(ctx, lx, ly + 10, text, color);
+        }
+
+        function replayEnsureOverlayCanvasInHost() {
+            const host = document.getElementById("replayAlgoChartHost");
+            const canvas = document.getElementById("replayAlgoChartOverlay");
+            if (!host || !canvas) return;
+            if (canvas.parentElement !== host) host.appendChild(canvas);
         }
 
         function drawReplaySpotOverlay() {
             if (!_replayAlgoChart || !_replayCandleSeries || !_replayOverlayCanvas) return;
             const host = document.getElementById("replayAlgoChartHost");
             if (!host) return;
+            replayEnsureOverlayCanvasInHost();
             const canvas = _replayOverlayCanvas;
-            const rect = host.getBoundingClientRect();
-            if (rect.width < 8 || rect.height < 8) return;
+            const cw = host.clientWidth;
+            const ch = host.clientHeight;
+            if (cw < 8 || ch < 8) return;
             const dpr = window.devicePixelRatio || 1;
-            canvas.width = Math.floor(rect.width * dpr);
-            canvas.height = Math.floor(rect.height * dpr);
-            canvas.style.width = `${rect.width}px`;
-            canvas.style.height = `${rect.height}px`;
+            canvas.width = Math.floor(cw * dpr);
+            canvas.height = Math.floor(ch * dpr);
+            canvas.style.width = `${cw}px`;
+            canvas.style.height = `${ch}px`;
             const ctx = canvas.getContext("2d");
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-            ctx.clearRect(0, 0, rect.width, rect.height);
+            ctx.clearRect(0, 0, cw, ch);
 
+            _replayOverlayHitPoints = [];
+            const placedLabels = [];
             const sorted = _replayOverlayTrades.slice().sort((a, b) => {
                 const ka = replayParseTradeUnix(a.entry_ist || a.entry_time, a.entry_unix);
                 const kb = replayParseTradeUnix(b.entry_ist || b.entry_time, b.entry_unix);
                 return (ka || 0) - (kb || 0);
             });
 
+            const marks = [];
             sorted.forEach((t, i) => {
                 const n = i + 1;
                 const entryIst = t.entry_ist || t.entry_time;
@@ -7143,43 +7180,100 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 const spotIn = Number(t.index_entry ?? t.spot_entry ?? 0);
                 const spotOut = Number(t.index_exit ?? t.spot_exit ?? 0);
                 if (!(spotIn > 0)) return;
-
-                const barIn = replayMatchBarForIst(_replayChartBars, entryIst);
+                const barIn = replayBarForIst(_replayChartBars, entryIst);
                 if (!barIn) return;
                 const xIn = _replayAlgoChart.timeScale().timeToCoordinate(barIn.time);
                 const yIn = _replayCandleSeries.priceToCoordinate(spotIn);
                 if (xIn == null || yIn == null) return;
-
-                let inLabelX = xIn + 10;
-                let inLabelY = yIn - 8;
-                const inColor = "#fde047";
-
-                const barOut = exitIst ? replayMatchBarForIst(_replayChartBars, exitIst) : null;
+                let xOut = null;
+                let yOut = null;
+                const barOut = exitIst ? replayBarForIst(_replayChartBars, exitIst) : null;
                 if (barOut && spotOut > 0) {
-                    const xOut = _replayAlgoChart.timeScale().timeToCoordinate(barOut.time);
-                    const yOut = _replayCandleSeries.priceToCoordinate(spotOut);
-                    if (xOut != null && yOut != null) {
-                        const outColor = replayOutMarkerColor(t);
-                        let outLabelX = xOut + 10;
-                        let outLabelY = yOut - 8;
-                        if (Math.abs(xIn - xOut) < 2 && Math.abs(yIn - yOut) < 16) {
-                            inLabelX = xIn - 42;
-                            inLabelY = yIn - 10;
-                            outLabelX = xOut + 12;
-                            outLabelY = yOut + 10;
-                        }
-                        replayDrawCrossMarkHiContrast(ctx, xOut, yOut, outColor, 11);
-                        replayDrawSpotLabel(ctx, outLabelX, outLabelY, `OUT #${n}`, outColor);
-                    }
+                    xOut = _replayAlgoChart.timeScale().timeToCoordinate(barOut.time);
+                    yOut = _replayCandleSeries.priceToCoordinate(spotOut);
                 }
+                marks.push({ t, n, xIn, yIn, xOut, yOut, spotIn, spotOut, entryIst, exitIst });
+            });
 
-                replayDrawCrossMarkHiContrast(ctx, xIn, yIn, inColor, 11);
-                replayDrawSpotLabel(ctx, inLabelX, inLabelY, `IN #${n}`, inColor);
+            marks.forEach(m => {
+                if (m.xOut != null && m.yOut != null) {
+                    const np = Number(m.t.net_pnl);
+                    const lineColor = Number.isFinite(np) && np < 0 ? "#ff2a2a" : "#34d399";
+                    ctx.setLineDash([5, 4]);
+                    ctx.strokeStyle = lineColor;
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.moveTo(m.xIn, m.yIn);
+                    ctx.lineTo(m.xOut, m.yOut);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+            });
+
+            marks.forEach(m => {
+                const inColor = "#fde047";
+                replayDrawCrossMarkHiContrast(ctx, m.xIn, m.yIn, inColor, 10);
+                replayPlaceSpotLabel(ctx, placedLabels, m.xIn, m.yIn, `#${m.n}`, inColor, "entry");
+                _replayOverlayHitPoints.push({ x: m.xIn, y: m.yIn, trade: m.t, n: m.n });
+
+                if (m.xOut != null && m.yOut != null) {
+                    const outColor = replayOutMarkerColor(m.t);
+                    const exitReason = replayChartExitText(m.t);
+                    const exitBadge = /SL/.test(exitReason) ? `SL#${m.n}` : `✕#${m.n}`;
+                    replayDrawCrossMarkHiContrast(ctx, m.xOut, m.yOut, outColor, 10);
+                    replayPlaceSpotLabel(ctx, placedLabels, m.xOut, m.yOut, exitBadge, outColor, "exit");
+                    _replayOverlayHitPoints.push({ x: m.xOut, y: m.yOut, trade: m.t, n: m.n });
+                }
+            });
+        }
+
+        function replayAttachChartHover() {
+            const box = document.getElementById("replayAlgoChart");
+            const tip = document.getElementById("replayChartHoverTip");
+            const host = document.getElementById("replayAlgoChartHost");
+            if (!box || !tip || !host || box._replayHoverBound) return;
+            box._replayHoverBound = true;
+            box.addEventListener("mousemove", (ev) => {
+                if (!_replayOverlayHitPoints.length) {
+                    tip.style.display = "none";
+                    return;
+                }
+                const hostRect = host.getBoundingClientRect();
+                const lx = ev.clientX - hostRect.left;
+                const ly = ev.clientY - hostRect.top;
+                const hit = _replayOverlayHitPoints.find(p => Math.hypot(lx - p.x, ly - p.y) <= 14);
+                if (!hit) {
+                    tip.style.display = "none";
+                    return;
+                }
+                const t = hit.trade;
+                const side = replayChartSide(t);
+                const entHm = replayIstHmShort(t.entry_ist || t.entry_time);
+                const exHm = replayIstHmShort(t.exit_ist || t.exit_time);
+                const spotIn = Number(t.index_entry ?? t.spot_entry ?? 0);
+                const spotOut = Number(t.index_exit ?? t.spot_exit ?? 0);
+                const exitReason = replayChartExitText(t);
+                const np = Number(t.net_pnl);
+                const pnlTxt = Number.isFinite(np)
+                    ? `${np >= 0 ? "+" : ""}${Math.round(np)} INR`
+                    : "—";
+                tip.textContent = `#${hit.n} ${side} | IN: ${spotIn.toFixed(2)} @ ${entHm} -> OUT: ${spotOut > 0 ? spotOut.toFixed(2) : "—"} @ ${exHm} | ${exitReason} | P&L: ${pnlTxt}`;
+                const boxRect = box.getBoundingClientRect();
+                const tx = Math.min(Math.max(8, ev.clientX - boxRect.left + 12), boxRect.width - 20);
+                const ty = Math.min(Math.max(8, ev.clientY - boxRect.top - 28), boxRect.height - 40);
+                tip.style.left = `${tx}px`;
+                tip.style.top = `${ty}px`;
+                tip.style.display = "block";
+            });
+            box.addEventListener("mouseleave", () => {
+                tip.style.display = "none";
             });
         }
 
         function replayEnsureChartOverlayHooks() {
             if (!_replayAlgoChart) return;
+            replayEnsureOverlayCanvasInHost();
+            replayAttachChartHover();
             if (_replayOverlayRangeUnsub) {
                 _replayOverlayRangeUnsub();
                 _replayOverlayRangeUnsub = null;
@@ -7217,6 +7311,7 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                     return;
                 }
                 wrap.style.display = "block";
+                replayEnsureOverlayCanvasInHost();
                 if (!_replayAlgoChart) {
                     _replayAlgoChart = LightweightCharts.createChart(host, {
                         layout: { background: { color: "#0b1220" }, textColor: "#94a3b8" },
@@ -7248,6 +7343,7 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 _replayCandleSeries.setMarkers([]);
                 _replayOverlayTrades = protoTrades;
                 _replayAlgoChart.timeScale().fitContent();
+                replayEnsureOverlayCanvasInHost();
                 requestAnimationFrame(() => {
                     drawReplaySpotOverlay();
                     requestAnimationFrame(drawReplaySpotOverlay);
