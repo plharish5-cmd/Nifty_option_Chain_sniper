@@ -29,7 +29,15 @@ def _source(vote: str, age: int = 6) -> dict:
         direction = "CE"
     elif vote == "OPPOSE":
         direction = "PE"
-    return {"direction": direction, "feed_state": "LIVE", "age_sec": age, "detail": "puts heavier"}
+    # Provenance is required to block (fail-open on missing source_ts); a LIVE
+    # source must carry one to exercise the real BLOCK path.
+    return {
+        "direction": direction,
+        "feed_state": "LIVE",
+        "age_sec": age,
+        "source_ts": "2026-11-27T11:00:00+05:30",
+        "detail": "puts heavier",
+    }
 
 
 def _board_for_signal(sig_key: str, vote: str) -> list:
@@ -144,11 +152,12 @@ def test_audit_row_exact_text_block(tmp_path: Path):
         cfg={},
         _decision_audit_seen={},
     )
+    _ts = "2026-11-27T11:00:00+05:30"  # provenance required to block (fail-open without it)
     sources = [
-        {"id": "total_oi", "direction": "PE", "feed_state": "LIVE", "age_sec": 6, "detail": "PE writers heavier"},
-        {"id": "day_oi", "direction": "CE", "feed_state": "LIVE", "age_sec": 6, "detail": "ok"},
-        {"id": "fresh_oi", "direction": "CE", "feed_state": "LIVE", "age_sec": 6, "detail": "ok"},
-        {"id": "writer_flow", "direction": "CE", "feed_state": "LIVE", "age_sec": 6, "detail": "ok"},
+        {"id": "total_oi", "direction": "PE", "feed_state": "LIVE", "age_sec": 6, "source_ts": _ts, "detail": "PE writers heavier"},
+        {"id": "day_oi", "direction": "CE", "feed_state": "LIVE", "age_sec": 6, "source_ts": _ts, "detail": "ok"},
+        {"id": "fresh_oi", "direction": "CE", "feed_state": "LIVE", "age_sec": 6, "source_ts": _ts, "detail": "ok"},
+        {"id": "writer_flow", "direction": "CE", "feed_state": "LIVE", "age_sec": 6, "source_ts": _ts, "detail": "ok"},
     ]
     gating = evaluate_lane_gating("reversal", True, sources, b.scanner_cfg)
     record_gating_audits(b, "reversal", True, gating, strategy_id="CROSSOVER_BULLISH")
