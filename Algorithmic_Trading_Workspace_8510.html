@@ -1295,6 +1295,22 @@
             opacity: 0;
             transition: opacity 0.3s;
         }
+        #ordersBookTable th.orders-col-book,
+        #ordersBookTable td.orders-col-book {
+            padding-left: 3px !important;
+            padding-right: 3px !important;
+        }
+        #ordersBookTable th.orders-col-status,
+        #ordersBookTable td.orders-col-status {
+            padding-right: 2px !important;
+        }
+        #ordersBookTable td.orders-col-status .status-badge {
+            padding: 2px 4px !important;
+        }
+        #ordersBookTable th.orders-col-ts,
+        #ordersBookTable td.orders-col-ts {
+            white-space: nowrap !important;
+        }
 
         /* Buttons & Forms */
         button {
@@ -2790,7 +2806,7 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                         <colgroup>
                             <col style="width:4%;">
                             <col style="width:7%;">
-                            <col style="width:9%;">
+                            <col style="width:5%;">
                             <col style="width:11%;">
                             <col style="width:8%;">
                             <col style="width:10%;">
@@ -2801,15 +2817,15 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                             <col style="width:7%;">
                             <col style="width:7%;">
                             <col style="width:7%;">
+                            <col style="width:17%;">
                             <col style="width:9%;">
-                            <col style="width:9%;">
-                            <col style="width:10%;">
+                            <col style="width:6%;">
                         </colgroup>
                         <thead>
                             <tr>
                                 <th class="orders-col-num"></th>
                                 <th class="orders-col-num">Order ID</th>
-                                <th class="orders-col-wrap">Book</th>
+                                <th class="orders-col-book">Book</th>
                                 <th class="orders-col-wrap">Symbol</th>
                                 <th class="orders-col-wrap">Source</th>
                                 <th class="orders-col-wrap">Strategy / Setup</th>
@@ -2820,9 +2836,9 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                                 <th class="orders-col-num">SPOT EXIT</th>
                                 <th class="orders-col-num">Option Entry</th>
                                 <th class="orders-col-num">Option Exit</th>
-                                <th class="orders-col-wrap">Timestamp</th>
+                                <th class="orders-col-ts">Timestamp</th>
                                 <th class="orders-col-wrap">Exit / Net P&amp;L</th>
-                                <th class="orders-col-wrap">Status</th>
+                                <th class="orders-col-status">Status</th>
                             </tr>
                         </thead>
                         <tbody id="ordersTableBody">
@@ -6057,7 +6073,7 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 <tr${isExit ? ` style="background:rgba(239,68,68,0.05);"` : ``}>
                     <td class="orders-col-num"><button type="button" class="orders-row-copy-btn" title="Copy row (TSV)" onclick="event.preventDefault(); event.stopPropagation(); copyOrdersBookRow(${idx});">Copy</button></td>
                     <td class="orders-col-num" title="${o.order_id}"><code>${shortOrderId(o.order_id)}</code></td>
-                    <td class="orders-col-wrap"><span class="status-badge ${bookBadge}">${bookLabel}</span></td>
+                    <td class="orders-col-book"><span class="status-badge ${bookBadge}">${bookLabel}</span></td>
                     <td class="orders-col-wrap"><b style="font-family:var(--font-mono); font-weight:600;">${o.symbol}</b></td>
                     <td class="orders-col-wrap"><span class="status-badge ${(o.source || o.placed_by || '').includes('AUTO') ? 'badge-bull' : 'badge-gold'}">${o.source || o.placed_by || 'MANUAL'}</span></td>
                     <td class="orders-col-wrap"><span style="font-family:var(--font-mono);">${ordersEveryRowStrategyLabel(o)}</span></td>
@@ -6068,9 +6084,9 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                     <td class="orders-col-num">${fmtNiftySpot(o.nifty_spot_exit)}</td>
                     <td class="orders-col-num">${fmtOptionPrem(o.option_entry)}</td>
                     <td class="orders-col-num">${fmtOptionPrem(o.option_exit)}</td>
-                    <td class="orders-col-wrap" style="color:var(--text-dim);">${formatDeskTimestamp(o.created_at)}</td>
+                    <td class="orders-col-ts" style="color:var(--text-dim);">${String(formatDeskTimestamp(o.created_at) || "").replace(/\s*IST\s*$/i, "")}</td>
                     <td class="orders-col-wrap">${exitCell}</td>
-                    <td class="orders-col-wrap">${orderRejectionStatusHtml(o)}</td>
+                    <td class="orders-col-status">${orderRejectionStatusHtml(o)}</td>
                 </tr>
             `;
             }).join("");
