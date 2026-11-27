@@ -1295,6 +1295,23 @@
             opacity: 0;
             transition: opacity 0.3s;
         }
+
+        /* Replay — Chart Homework Notes scroll (all trades visible) */
+        #tabReplayExplorer,
+        #replayHomeworkPanel {
+            overflow: visible;
+        }
+        #replayHomeworkCards {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            max-height: 540px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            scrollbar-gutter: stable;
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            border-radius: 8px;
+        }
         #ordersBookTable th.orders-col-book,
         #ordersBookTable td.orders-col-book {
             padding-left: 3px !important;
@@ -2999,11 +3016,11 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
 
                 <div id="replayHomeworkPanel" style="margin-bottom:16px; border:1px solid rgba(56,189,248,0.35); border-radius:8px; padding:12px 14px; background:rgba(9,14,26,0.92);">
                     <div style="display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:8px;">
-                        <span style="font-size:13px; font-weight:800; color:#38bdf8;">Chart Homework Notes</span>
+                        <span id="replayHomeworkHeading" style="font-size:13px; font-weight:800; color:#38bdf8;">Chart Homework Notes</span>
                         <button type="button" class="emerald-btn" id="replayCopyHomeworkBtn" onclick="copyReplayHomework()">📋 Copy All Homework</button>
                         <span id="replayCopyHomeworkAck" style="font-size:11px; color:var(--emerald); opacity:0; transition:opacity 0.3s;">Copied!</span>
                     </div>
-                    <div id="replayHomeworkCards" style="display:flex; flex-direction:column; gap:0; max-height:520px; overflow:auto; border:1px solid rgba(148,163,184,0.22); border-radius:8px; overflow:hidden;"></div>
+                    <div id="replayHomeworkCards"></div>
                     <pre id="replayHomeworkText" style="display:none; margin:0;"></pre>
                 </div>
 
@@ -7442,11 +7459,16 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
         function renderReplayHomeworkOnly(trades) {
             const pre = document.getElementById("replayHomeworkText");
             const cards = document.getElementById("replayHomeworkCards");
+            const heading = document.getElementById("replayHomeworkHeading");
             _replayHomeworkText = buildReplayHomeworkText(_replaySessionDate, trades || _replayAllTrades);
             if (pre) pre.textContent = _replayHomeworkText;
             if (!cards) return;
             const filtered = (trades || _replayAllTrades || []).filter(t => replayTradeMatchesPill(t, replayStrategyPill));
             const sorted = filtered.slice().sort((a, b) => replaySortKey(a) - replaySortKey(b));
+            const tradeCount = sorted.length;
+            if (heading) {
+                heading.textContent = `Chart Homework Notes (${tradeCount} trade${tradeCount === 1 ? "" : "s"})`;
+            }
             if (!sorted.length) {
                 cards.innerHTML = '<div style="color:var(--text-muted); font-size:12px; padding:8px;">No trades for this filter — homework empty.</div>';
                 return;
