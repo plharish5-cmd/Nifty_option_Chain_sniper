@@ -8065,7 +8065,7 @@ class QuantTerminalBackend:
 
     def _pending_closed_15m_open_ts(self) -> List[int]:
         """15m bar OPEN unix timestamps not yet evaluated (after engine gap / restart)."""
-        bar = self._latest_closed_15m_bar()
+        bar = self._latest_closed_15m_bar(prompt_boundary=True)
         if not bar:
             return []
         closed_open_ts = int(bar.get("ts") or 0)
@@ -11233,7 +11233,12 @@ class QuantTerminalBackend:
             log.debug("Latest 5m bar unavailable: %s", exc)
             return None
 
-    def _latest_closed_15m_bar(self) -> Optional[Dict[str, float]]:
+    def _latest_closed_15m_bar(self, prompt_boundary: bool = False) -> Optional[Dict[str, float]]:
+        """Latest COMPLETED 15m bar. With prompt_boundary=True (arm-flip path only),
+        a synthetic forming row from the live spot is appended so the just-closed bar
+        surfaces at iloc[-2] the instant the clock crosses the 15m boundary, instead
+        of ~86s later when the new bucket's 1m candle lands. The trail callers leave
+        this False, so exit timing is unchanged."""
         if not Path(self.market_db).exists():
             return None
         try:
@@ -11248,6 +11253,26 @@ class QuantTerminalBackend:
             df = df.iloc[::-1]
             df["dt"] = pd.to_datetime(df["ts"], unit="s", utc=True).dt.tz_convert("Asia/Kolkata")
             b15 = resample_nse_15m(df.set_index("dt").rename(columns={"o": "open", "h": "high", "l": "low", "c": "close"}))
+            # Prompt-boundary close detection (v266 #bug-CE3): the 1m candle for the
+            # new bucket can land ~60-90s after the clock crosses the 15m boundary, so
+            # without a forming row at iloc[-1] the just-closed bar stays hidden at
+            # iloc[-2] and the opposite-close arm-flip fires ~86s late (a wrong-side
+            # re-entry can slip through the gap). Appending a synthetic forming row
+            # from the LIVE spot surfaces the just-closed bar the instant the boundary
+            # passes. Decision logic is unchanged — only when the closed bar is seen.
+            if prompt_boundary and bool(self.scanner_cfg.get("prompt_boundary_close_eval", True)):
+                try:
+                    from analyst.ema8_prototype_8510 import (
+                        current_nse_15m_open_ts,
+                        ensure_forming_b15_bar,
+                    )
+
+                    live_spot = float((self.cached_telemetry.get("spot") or {}).get("price") or 0.0)
+                    if live_spot > 0 and not b15.empty:
+                        cur_open = current_nse_15m_open_ts(datetime.now(IST))
+                        b15, _ = ensure_forming_b15_bar(b15, bar_open_ts=cur_open, live_spot=live_spot)
+                except Exception as exc:
+                    log.debug("prompt-boundary forming-bar append skipped: %s", exc)
             if len(b15) < 2:
                 return None
             row = b15.iloc[-2]
