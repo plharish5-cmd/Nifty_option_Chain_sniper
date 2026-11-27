@@ -2852,16 +2852,6 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                         </select>
                     </div>
                     <div>
-                        <label style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono);">Select Strategy Setup</label>
-                        <select id="replayStrategyFilter" style="display:block; margin-top:4px; min-width:220px;">
-                            <option value="ALL" selected>All strategies</option>
-                            <option value="EMA8_PROTOTYPE">8 EMA Prototype (Paper)</option>
-                            <option value="STAGE_2_LONG">Stage 2 8 EMA Long</option>
-                            <option value="STAGE_3_SHORT">Stage 3 8 EMA Short</option>
-                            <option value="H1_FLAGSHIP">1 HR FLAGSHIP</option>
-                        </select>
-                    </div>
-                    <div>
                         <label style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono);">Playback Speed</label>
                         <select id="replaySpeedSelect" style="display:block; margin-top:4px;">
                             <option value="1">1x Speed</option>
@@ -2871,6 +2861,10 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                         </select>
                     </div>
                     <button type="button" class="cyan-btn" onclick="runHistoricalReplay()">▶️ Run Replay (Ledger or Spot OHLC)</button>
+                </div>
+                <div style="margin-bottom:12px;">
+                    <label style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono); display:block; margin-bottom:6px;">Strategy filter</label>
+                    <h3 id="replayStrategyPills" style="margin:0; display:flex; flex-wrap:wrap; gap:8px; align-items:center; font-size:11.5px; font-weight:600;"></h3>
                 </div>
 
                 <!-- Replay Summary Scoreboard -->
@@ -2895,6 +2889,15 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
 
                 <div id="replayAnalysis" style="margin-bottom:16px;"></div>
 
+                <div id="replayHomeworkPanel" style="margin-bottom:16px; border:1px solid rgba(56,189,248,0.35); border-radius:8px; padding:12px 14px; background:rgba(9,14,26,0.92);">
+                    <div style="display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:8px;">
+                        <span style="font-size:13px; font-weight:800; color:#38bdf8;">Chart Homework Notes</span>
+                        <button type="button" class="emerald-btn" id="replayCopyHomeworkBtn" onclick="copyReplayHomework()">📋 Copy Homework to Chart</button>
+                        <span id="replayCopyHomeworkAck" style="font-size:11px; color:var(--emerald); opacity:0; transition:opacity 0.3s;">Copied!</span>
+                    </div>
+                    <pre id="replayHomeworkText" style="margin:0; padding:10px 12px; background:#0b1220; border-radius:6px; color:#e2e8f0; font-family:var(--font-mono); font-size:11.5px; line-height:1.45; white-space:pre-wrap; max-height:420px; overflow:auto;">Select a date to load trades — homework generates automatically for every session (including today).</pre>
+                </div>
+
                 <div id="replayAlgoChartWrap" style="display:none; margin-bottom:16px; border:1px solid var(--border-subtle); border-radius:8px; padding:8px 10px 4px; background:rgba(9,14,26,0.85);">
                     <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px; flex-wrap:wrap;">
                         <span style="font-size:12px; font-weight:700; color:#38bdf8;">ALGO CHART — 15m Nifty spot + 4/8 EMA</span>
@@ -2910,6 +2913,7 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                             <tr>
                                 <th>Contract Symbol</th>
                                 <th>Setup Name</th>
+                                <th>Algo Book</th>
                                 <th>Entry IST</th>
                                 <th>Exit IST</th>
                                 <th>Duration</th>
@@ -3164,6 +3168,11 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
             setInterval(pollLiveEngine, 1000); // 1-second live desk stream
             pollDhanEmaCrossPanel();
             setInterval(pollDhanEmaCrossPanel, 3000); // TV 4/8 EMA panel — forming bar tick (matches backend refresh)
+            renderReplayStrategyPills();
+            const replaySel = document.getElementById("replayDateSelect");
+            if (replaySel) {
+                replaySel.addEventListener("change", () => runHistoricalReplay());
+            }
             populateReplayDates();
             btlInit();
             checkIngestStatus(new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata"}).format(new Date()));
@@ -4887,7 +4896,8 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 checkIngestStatus();
             }
             if (tabId === 'tabReplayExplorer') {
-                populateReplayDates();
+                renderReplayStrategyPills();
+                populateReplayDates().then(() => runHistoricalReplay());
             }
         }
 
@@ -6893,98 +6903,338 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
         }
 
         // ── 8. HISTORICAL DATE REPLAY LOGIC ───────────────────────────────────
-        async function runHistoricalReplay() {
-            const dt = document.getElementById("replayDateSelect").value;
-            const spd = parseFloat(document.getElementById("replaySpeedSelect").value || 10);
+        const REPLAY_STRATEGY_PILLS = [
+            { id: "ALL", label: "All Strategies" },
+            { id: "STAGE_2", label: "Stage 2" },
+            { id: "STAGE_3", label: "Stage 3" },
+            { id: "REVERSAL", label: "8 EMA Reversal" },
+            { id: "H1_FLAGSHIP", label: "1 HR Flagship" },
+            { id: "EMA8_PROTOTYPE", label: "8 EMA Prototype" },
+            { id: "DESK8600", label: "8600 Ticket" },
+        ];
+        let replayStrategyPill = "ALL";
+        let _replayAllTrades = [];
+        let _replaySessionDate = "";
+        let _replayLastPayload = null;
+        let _replayHomeworkText = "";
+
+        function renderReplayStrategyPills() {
+            const el = document.getElementById("replayStrategyPills");
+            if (!el) return;
+            el.innerHTML = REPLAY_STRATEGY_PILLS.map(p =>
+                d86Btn(p.label, replayStrategyPill === p.id, `setReplayStrategyPill('${p.id}')`, `Filter replay + homework: ${p.label}`)
+            ).join(" ");
+        }
+
+        function setReplayStrategyPill(id) {
+            replayStrategyPill = String(id || "ALL").toUpperCase();
+            renderReplayStrategyPills();
+            if (_replayAllTrades.length) {
+                renderReplayTradesFiltered();
+            } else if (_replaySessionDate) {
+                renderReplayHomeworkOnly([]);
+            }
+        }
+
+        function replayTradeMatchesPill(t, pill) {
+            const p = String(pill || "ALL").toUpperCase();
+            if (p === "ALL") return true;
+            const sid = String(t.strategy_id || t.strategy || "").toUpperCase();
+            const setup = String(t.setup_name || t.setup || "");
+            const su = setup.toUpperCase();
+            const blob = sid + " " + su;
+            if (p === "STAGE_2") return /STAGE_2|STAGE 2|MJ.*STAGE 2/.test(blob);
+            if (p === "STAGE_3") return /STAGE_3|STAGE 3/.test(blob);
+            if (p === "REVERSAL") return /CROSSOVER|REVERSAL|8 EMA REVERSAL/.test(blob);
+            if (p === "H1_FLAGSHIP") return /H1_8EMA|FLAGSHIP|1H FLAGSHIP|1 HR FLAGSHIP|1H 8/.test(blob);
+            if (p === "EMA8_PROTOTYPE") return /EMA8_PROTOTYPE|8 EMA PROTOTYPE/.test(blob);
+            if (p === "DESK8600") return /DESK8600|8600 TICKET|8600_|TICKET|RIBBON_SCALP|MATRIX_SCALP|RIBBON SCALP|MATRIX SCALP/.test(blob);
+            return true;
+        }
+
+        function replayExecutionBookBadge(t) {
+            const mode = String(t.execution_mode || t.mode || t.book || "").toUpperCase();
+            const src = String(t.source || t.provenance || t.data_source_tag || "").toUpperCase();
+            const priceType = String(t.price_type || "").toUpperCase();
+            const live = mode.includes("LIVE") || mode === "BOTH" || mode === "ALGO_LIVE_ONLY"
+                || mode === "LIVE_ALLOWED" || priceType.includes("REAL_ALGO");
+            const paperOnly = mode === "PAPER_ONLY" || mode === "REAL_ALGO_PAPER" || /SYNTH|SPOT_SYNTH/.test(src);
+            if (live && !paperOnly) {
+                return { label: "REAL ALGO", badge: "badge-bull", color: "#34d399" };
+            }
+            return { label: "PAPER ALGO", badge: "badge-side", color: "#fbbf24" };
+        }
+
+        function replayTradeSide(t) {
+            const d = String(t.direction || "").toUpperCase();
+            if (d === "LONG" || d === "BUY") return "CE";
+            if (d === "SHORT" || d === "SELL") return "PE";
+            const sym = String(t.contract_symbol || t.symbol || "").toUpperCase();
+            if (/\bCE\b/.test(sym) && !/\bPE\b/.test(sym)) return "CE";
+            if (/\bPE\b/.test(sym)) return "PE";
+            return "CE";
+        }
+
+        function replayExitReason(t) {
+            return String(t.outcome || t.result || t.exit_reason || "EXIT").trim().toUpperCase();
+        }
+
+        function replayHmFromTs(ts) {
+            const m = String(ts || "").match(/(\d{1,2}):(\d{2})/);
+            if (!m) return "—";
+            return `${String(parseInt(m[1], 10)).padStart(2, "0")}:${m[2]}`;
+        }
+
+        function replaySortKey(t) {
+            if (t.entry_unix != null) return Number(t.entry_unix);
+            const raw = String(t.entry_ist || t.entry_time || "");
+            const m = raw.match(/(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})/);
+            if (m) return new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:00+05:30`).getTime() / 1000;
+            return 0;
+        }
+
+        function replayStrategyHomeworkLabel(t) {
+            const sid = String(t.strategy_id || "").toUpperCase();
+            const setup = String(t.setup_name || t.setup || "");
+            if (/EMA8_PROTOTYPE|8 EMA PROTOTYPE/i.test(sid + " " + setup)) return "8 EMA Prototype";
+            if (/STAGE_2|STAGE 2/i.test(sid + " " + setup)) return "Stage 2";
+            if (/STAGE_3|STAGE 3/i.test(sid + " " + setup)) return "Stage 3";
+            if (/CROSSOVER|REVERSAL/i.test(sid + " " + setup)) return "8 EMA Reversal";
+            if (/FLAGSHIP|1H/i.test(sid + " " + setup)) return "1 HR Flagship";
+            if (/8600|TICKET/i.test(sid + " " + setup)) return "8600 Ticket";
+            return setup || "Strategy";
+        }
+
+        function replayEntryContextTag(t, prev) {
+            const setup = String(t.setup_name || t.setup || "");
+            if (/PREVIOUS CANDLE CLOSED BELOW 8 EMA/i.test(setup)) return "(PREVIOUS CANDLE CLOSED BELOW 8 EMA)";
+            if (/PREVIOUS CANDLE CLOSED ABOVE 8 EMA/i.test(setup)) return "(PREVIOUS CANDLE CLOSED ABOVE 8 EMA)";
+            if (prev && /OPPOSITE_8EMA/.test(replayExitReason(prev))) return "(TRIGGERED AFTER OPP 8 EMA CLOSE)";
+            return "";
+        }
+
+        function replaySameFamily(a, b) {
+            return replayStrategyHomeworkLabel(a) === replayStrategyHomeworkLabel(b);
+        }
+
+        function replayTransitionLine(t, next) {
+            const side = replayTradeSide(t);
+            const reason = replayExitReason(t);
+            if (/OPPOSITE_8EMA/.test(reason)) {
+                return side === "PE" ? "CE TRIGGERED" : "PE TRIGGERED";
+            }
+            const slish = /SPOT_SL_HIT|OPTION_SL_HIT|SPOT_TRAIL_EXIT|OPTION_TARGET_HIT|SL_HIT|TRAIL/.test(reason);
+            if (!slish) return "";
+            const reentryNote = " (reentry_after_stop_loss)";
+            if (next && replaySameFamily(t, next)) {
+                const ns = replayTradeSide(next);
+                if (ns === side) {
+                    return (side === "PE" ? "PE ARM STILL ON" : "CE ARM STILL ON") + reentryNote;
+                }
+                return (ns === "CE" ? "CE TRIGGERED AFTER STOP LOSS" : "PE TRIGGERED AFTER STOP LOSS");
+            }
+            return (side === "PE" ? "PE ARM STILL ON" : "CE ARM STILL ON") + reentryNote;
+        }
+
+        function replayDateChartFormat(iso) {
+            const p = String(iso || "").slice(0, 10).split("-");
+            if (p.length === 3) return `${p[2]}-${p[1]}-${p[0]}`;
+            return iso;
+        }
+
+        function buildReplayHomeworkText(sessionDate, trades) {
+            const filtered = (trades || []).filter(t => replayTradeMatchesPill(t, replayStrategyPill));
+            const sorted = filtered.slice().sort((a, b) => replaySortKey(a) - replaySortKey(b));
+            const dDisp = replayDateChartFormat(sessionDate);
+            const pill = REPLAY_STRATEGY_PILLS.find(p => p.id === replayStrategyPill);
+            const stratHead = pill && replayStrategyPill !== "ALL" ? pill.label : "All Strategies";
+            if (!sorted.length) {
+                return `DATE: ${dDisp} | STRATEGY: ${stratHead}\n(No trades for this filter on this date.)`;
+            }
+            const lines = [`DATE: ${dDisp} | STRATEGY: ${stratHead}`];
+            let wins = 0, losses = 0, net = 0;
+            sorted.forEach((t, i) => {
+                const side = replayTradeSide(t);
+                const book = replayExecutionBookBadge(t).label;
+                const strat = replayStrategyHomeworkLabel(t);
+                const ctx = replayEntryContextTag(t, i > 0 ? sorted[i - 1] : null);
+                const ctxTxt = ctx ? ` ${ctx}` : "";
+                lines.push(`#${i + 1}, ${side} TRADE [${book}] — ${strat}${ctxTxt}`);
+                const se = Number(t.index_entry);
+                const sx = Number(t.index_exit);
+                const oe = Number(t.option_entry);
+                const ox = Number(t.option_exit);
+                const entHm = replayHmFromTs(t.entry_ist || t.entry_time);
+                const exHm = replayHmFromTs(t.exit_ist || t.exit_time);
+                const spotE = Number.isFinite(se) ? se.toFixed(2) : "—";
+                const spotX = Number.isFinite(sx) ? sx.toFixed(2) : "—";
+                const optE = Number.isFinite(oe) ? oe.toFixed(2) : "—";
+                const optX = Number.isFinite(ox) ? ox.toFixed(2) : "—";
+                lines.push(`ENTRY: @ ${spotE} (${optE}); ${entHm}`);
+                const reason = replayExitReason(t);
+                if (Number.isFinite(sx) && exHm !== "—") {
+                    lines.push(`EXIT: @ ${spotX} (${optX}); ${exHm} ${reason}`);
+                } else {
+                    lines.push(`EXIT: OPEN`);
+                }
+                const np = Number(t.net_pnl);
+                if (Number.isFinite(np)) {
+                    net += np;
+                    if (np >= 0) {
+                        wins += 1;
+                        lines.push(`PROFIT: +${Math.round(np)} RUPEES`);
+                    } else {
+                        losses += 1;
+                        lines.push(`LOSS: -${Math.round(Math.abs(np))} RUPEES`);
+                    }
+                } else {
+                    const pts = Number(t.st_pnl_pts);
+                    if (Number.isFinite(pts)) {
+                        lines.push(pts >= 0 ? `PROFIT: +${pts.toFixed(1)} NIFTY PTS` : `LOSS: -${Math.abs(pts).toFixed(1)} NIFTY PTS`);
+                    }
+                }
+                const trans = replayTransitionLine(t, sorted[i + 1]);
+                if (trans) lines.push(trans);
+            });
+            const netRound = Math.round(net);
+            const sign = netRound >= 0 ? "+" : "";
+            lines.push(`SUMMARY (${dDisp}): ${sorted.length} Trades (${wins}W / ${losses}L) | Net P&L: ${sign}${netRound} RUPEES`);
+            return lines.join("\n");
+        }
+
+        function renderReplayHomeworkOnly(trades) {
+            const pre = document.getElementById("replayHomeworkText");
+            if (!pre) return;
+            _replayHomeworkText = buildReplayHomeworkText(_replaySessionDate, trades || _replayAllTrades);
+            pre.textContent = _replayHomeworkText;
+        }
+
+        async function copyReplayHomework() {
+            const text = _replayHomeworkText || (document.getElementById("replayHomeworkText")?.textContent || "");
+            if (!text) return;
+            try {
+                await navigator.clipboard.writeText(text);
+            } catch (_) {
+                const ta = document.createElement("textarea");
+                ta.value = text;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand("copy");
+                document.body.removeChild(ta);
+            }
+            const ack = document.getElementById("replayCopyHomeworkAck");
+            if (ack) {
+                ack.style.opacity = "1";
+                setTimeout(() => { ack.style.opacity = "0"; }, 2000);
+            }
+        }
+
+        function renderReplayTradesFiltered() {
             const tbody = document.getElementById("replayTableBody");
-            tbody.innerHTML = `<tr><td colspan="15" style="text-align:center; color:#38bdf8; padding:20px;">Loading recorded ledger for ${dt}…</td></tr>`;
+            if (!tbody) return;
+            const dt = _replaySessionDate;
+            const pill = replayStrategyPill;
+            let trades = (_replayAllTrades || []).filter(t => replayTradeMatchesPill(t, pill));
+
+            const netEl = document.getElementById("replayNetPnl");
+            const filteredNet = trades.reduce((a, t) => a + (Number.isFinite(Number(t.net_pnl)) ? Number(t.net_pnl) : 0), 0);
+            const filteredWins = trades.filter(t => Number(t.net_pnl) > 0).length;
+            const winRate = trades.length ? (filteredWins / trades.length * 100).toFixed(1) : null;
+            document.getElementById("replayTradesCount").textContent = trades.length;
+            document.getElementById("replayWinRate").textContent = winRate == null ? "—" : `${winRate}%`;
+            const allSynth = trades.length && trades.every(t => resolveDataSourceTag(t) === "SYNTHESIZED");
+            if (allSynth) {
+                const pts = trades.reduce((a, t) => a + Number(t.st_pnl_pts || 0), 0);
+                netEl.textContent = `${pts >= 0 ? "+" : ""}${pts.toFixed(1)} pts spot (no modeled INR)`;
+                netEl.style.color = pts >= 0 ? "var(--emerald)" : "var(--crimson)";
+            } else if (trades.length) {
+                netEl.textContent = `₹${filteredNet.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+                netEl.style.color = filteredNet >= 0 ? "var(--emerald)" : "var(--crimson)";
+            } else if (_replayLastPayload) {
+                netEl.textContent = "₹0.00";
+            }
+
+            renderReplayHomeworkOnly(trades);
+
+            if (!trades.length) {
+                const hint = _replayLastPayload?.replay_kind === "REAL_SPOT_OHLC_RULE_REPLAY"
+                    ? " Spot rule replay returned no signals for this strategy/date."
+                    : "";
+                tbody.innerHTML = `<tr><td colspan="15" style="text-align:center; color:var(--text-muted); padding:16px;">No trades on ${dt} for this filter.${hint}</td></tr>`;
+                renderTradeAnalysis("replayAnalysis", []);
+                const wrap = document.getElementById("replayAlgoChartWrap");
+                if (wrap) wrap.style.display = "none";
+                return;
+            }
+
+            tbody.innerHTML = trades.map(t => {
+                const setupName = t.setup_name || t.setup || "Strategy Trade";
+                const entryTime = formatDeskTimestamp(t.entry_ist || t.entry_time || "-");
+                const exitTime = formatDeskTimestamp(t.exit_ist || t.exit_time || "-");
+                const outcomeText = t.outcome || t.result || "CLOSED";
+                const chgVal = (t.dhan_charges != null) ? t.dhan_charges : (t.charges || 0);
+                const sym = t.contract_symbol || t.symbol || "UNKNOWN";
+                const pt = resolvePriceType(t);
+                const optIn = sanitizeOptionDisplay(t.option_entry, pt);
+                const optOut = sanitizeOptionDisplay(t.option_exit, pt);
+                const book = replayExecutionBookBadge(t);
+                return `
+                    <tr>
+                        <td><code style="font-family:var(--font-mono);">${sym}</code></td>
+                        <td><b>${setupName}</b></td>
+                        <td><span class="status-badge ${book.badge}" style="font-size:10px; color:${book.color};">${book.label}</span></td>
+                        <td>${entryTime}</td>
+                        <td>${exitTime}</td>
+                        <td>${t.duration || "-"}</td>
+                        <td>${(t.index_entry != null ? Number(t.index_entry).toFixed(1) : "-")}</td>
+                        <td>${(t.index_exit != null ? Number(t.index_exit).toFixed(1) : "-")}</td>
+                        <td>${optIn}</td>
+                        <td>${optOut}</td>
+                        <td><span class="status-badge ${(t.net_pnl != null && t.net_pnl >= 0) || (t.st_pnl_pts != null && t.st_pnl_pts >= 0) ? "badge-bull" : "badge-bear"}">${outcomeText}</span></td>
+                        <td>${fmtMoneyOrDash(t.gross_pnl, t)}</td>
+                        <td>${fmtMoneyOrDash(chgVal, t)}</td>
+                        <td style="font-weight:700;">${fmtMoneyOrDash(t.net_pnl, t)}${pt === "SYNTHESIZED" && t.st_pnl_pts != null ? ` <span style="color:var(--text-muted);font-size:10px;">(${Number(t.st_pnl_pts).toFixed(1)} pts)</span>` : ""}</td>
+                        <td>${formatDataSourceCell(t)}</td>
+                    </tr>
+                `;
+            }).join("");
+
+            renderTradeAnalysis("replayAnalysis", trades);
+            renderReplayAlgoChart(dt, trades, _replayLastPayload?.chart_markers);
+        }
+
+        async function runHistoricalReplay() {
+            const dt = document.getElementById("replayDateSelect")?.value;
+            if (!dt) return;
+            const spd = parseFloat(document.getElementById("replaySpeedSelect")?.value || 10);
+            const tbody = document.getElementById("replayTableBody");
+            if (tbody) {
+                tbody.innerHTML = `<tr><td colspan="15" style="text-align:center; color:#38bdf8; padding:20px;">Loading recorded ledger for ${dt}…</td></tr>`;
+            }
 
             try {
-                const replayFlt = (document.getElementById("replayStrategyFilter")?.value || "ALL").toUpperCase();
-                const spotReplay = replayFlt === "EMA8_PROTOTYPE";
                 const res = await fetch("/api/replay/run", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         date: dt,
                         speed: spd,
-                        strategy_filter: replayFlt,
-                        spot_replay: spotReplay,
-                    })
+                        strategy_filter: "ALL",
+                        spot_replay: false,
+                    }),
                 });
                 const d = await res.json();
                 if (!d.ok) {
-                    alert("Replay error: " + d.error);
+                    alert("Replay error: " + (d.error || "unknown"));
                     return;
                 }
+
+                _replaySessionDate = dt;
+                _replayAllTrades = d.trades || [];
+                _replayLastPayload = d;
 
                 document.getElementById("replayCandlesCount").textContent = `${d.candles_count} / 375`;
-                document.getElementById("replayTradesCount").textContent = d.trades_count;
-                document.getElementById("replayWinRate").textContent = `${d.win_rate == null ? "—" : d.win_rate+"%"}`;
-                let trades = d.trades || [];
-                const netEl = document.getElementById("replayNetPnl");
-                const allSynth = trades.length && trades.every(t => resolveDataSourceTag(t) === 'SYNTHESIZED');
-                if (allSynth) {
-                    const pts = trades.reduce((a, t) => a + Number(t.st_pnl_pts || 0), 0);
-                    netEl.textContent = `${pts >= 0 ? '+' : ''}${pts.toFixed(1)} pts spot (no modeled INR)`;
-                    netEl.style.color = pts >= 0 ? "var(--emerald)" : "var(--crimson)";
-                } else {
-                    netEl.textContent = `₹${Number(d.total_net_pnl || 0).toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
-                    netEl.style.color = (d.total_net_pnl ?? 0) >= 0 ? "var(--emerald)" : "var(--crimson)";
-                }
-                const backendFlt = String(d.strategy_filter || "ALL").toUpperCase();
-                if (replayFlt !== "ALL" && backendFlt !== replayFlt) {
-                    trades = trades.filter(t => {
-                        const sid = String(t.strategy_id || t.strategy || "").toUpperCase();
-                        const setup = String(t.setup_name || t.setup || "").toUpperCase();
-                        if (replayFlt === "EMA8_PROTOTYPE") return sid.includes("EMA8_PROTOTYPE") || setup.includes("8 EMA PROTOTYPE");
-                        if (replayFlt === "STAGE_2_LONG") return sid.includes("STAGE_2");
-                        if (replayFlt === "STAGE_3_SHORT") return sid.includes("STAGE_3");
-                        if (replayFlt === "H1_FLAGSHIP") return sid.includes("FLAGSHIP") || setup.includes("FLAGSHIP");
-                        return true;
-                    });
-                }
-
-                if (trades.length === 0) {
-                    const hint = d.replay_kind === 'REAL_SPOT_OHLC_RULE_REPLAY'
-                        ? ' Spot rule replay returned no signals for this strategy/date (check BB gate and candles).'
-                        : ' No immutable master rows for this strategy on this date.';
-                    tbody.innerHTML = `<tr><td colspan="15" style="text-align:center; color:var(--text-muted); padding:16px;">No trades to show on ${dt}${replayFlt !== "ALL" ? " (filter: " + replayFlt + ")" : ""}.${hint}</td></tr>`;
-                    return;
-                }
-
-                tbody.innerHTML = trades.map(t => {
-                    const setupName = t.setup_name || t.setup || "Strategy Trade";
-                    const entryTime = formatDeskTimestamp(t.entry_ist || t.entry_time || "-");
-                    const exitTime = formatDeskTimestamp(t.exit_ist || t.exit_time || "-");
-                    const outcomeText = t.outcome || t.result || "CLOSED";
-                    const chgVal = (t.dhan_charges != null) ? t.dhan_charges : (t.charges || 0);
-                    const sym = t.contract_symbol || t.symbol || 'UNKNOWN';
-                    const pt = resolvePriceType(t);
-                    const optIn = sanitizeOptionDisplay(t.option_entry, pt);
-                    const optOut = sanitizeOptionDisplay(t.option_exit, pt);
-                    return `
-                    <tr>
-                        <td><code style="font-family:var(--font-mono);">${sym}</code></td>
-                        <td><b>${setupName}</b></td>
-                        <td>${entryTime}</td>
-                        <td>${exitTime}</td>
-                        <td>${t.duration || '-'}</td>
-                        <td>${(t.index_entry != null ? Number(t.index_entry).toFixed(1) : '-')}</td>
-                        <td>${(t.index_exit != null ? Number(t.index_exit).toFixed(1) : '-')}</td>
-                        <td>${optIn}</td>
-                        <td>${optOut}</td>
-                        <td><span class="status-badge ${(t.net_pnl != null && t.net_pnl >= 0) || (t.st_pnl_pts != null && t.st_pnl_pts >= 0) ? 'badge-bull' : 'badge-bear'}">${outcomeText}</span></td>
-                        <td>${fmtMoneyOrDash(t.gross_pnl, t)}</td>
-                        <td>${fmtMoneyOrDash(chgVal, t)}</td>
-                        <td style="font-weight:700;">${fmtMoneyOrDash(t.net_pnl, t)}${pt === 'SYNTHESIZED' && t.st_pnl_pts != null ? ` <span style="color:var(--text-muted);font-size:10px;">(${Number(t.st_pnl_pts).toFixed(1)} pts)</span>` : ''}</td>
-                        <td>${formatDataSourceCell(t)}</td>
-                    </tr>
-                `;}).join("");
-
-                renderTradeAnalysis("replayAnalysis", trades);
-                await renderReplayAlgoChart(dt, trades, d.chart_markers);
-
+                renderReplayTradesFiltered();
             } catch (e) {
                 alert("Replay request error: " + e.message);
             }
@@ -8041,7 +8291,8 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 const select = document.getElementById("replayDateSelect");
                 if (!select || dates.length === 0) return;
                 const latest = data.latest || dates[0];
-                const prefer = dates.includes(select.value) ? select.value : latest;
+                const today = deskTodayKey();
+                let prefer = dates.includes(select.value) ? select.value : (dates.includes(today) ? today : latest);
                 select.innerHTML = dates.map(d => {
                     let label = d;
                     if (d === latest) label += " (Latest session)";

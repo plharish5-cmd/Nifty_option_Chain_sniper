@@ -11729,6 +11729,9 @@ class QuantTerminalBackend:
         except Exception:
             pass
         t["direction"] = str(row.get("Direction") or row.get("direction") or "").upper()
+        t["mode"] = str(row.get("mode") or row.get("execution_mode") or "PAPER_ONLY")
+        t["execution_mode"] = t["mode"]
+        t["exit_reason"] = outcome
         return t
 
     def get_replay_session_candles(self, session_date: str, tf: str = "15m") -> Dict[str, Any]:
