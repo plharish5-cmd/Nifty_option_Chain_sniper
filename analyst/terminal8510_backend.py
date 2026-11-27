@@ -5607,13 +5607,13 @@ class QuantTerminalBackend:
         self._ema8_proto_worker_started = True
         proto_cfg = load_ema8_prototype_cfg(self.scanner_cfg)
         refresh = float(proto_cfg.get("e8_refresh_seconds", 3.0) or 3.0)
-        refresh = max(2.0, min(refresh, 60.0))
+        refresh = max(1.0, min(refresh, 60.0))
         log.info("8 EMA Prototype intrabar worker started (%.1fs)", refresh)
         while True:
             try:
                 proto_cfg = load_ema8_prototype_cfg(self.scanner_cfg)
                 # cadence follows the config live, so a change needs no restart
-                refresh = max(2.0, min(float(proto_cfg.get("e8_refresh_seconds", 3.0) or 3.0), 60.0))
+                refresh = max(1.0, min(float(proto_cfg.get("e8_refresh_seconds", 3.0) or 3.0), 60.0))
                 if not bool(proto_cfg.get("enabled", True)):
                     await asyncio.sleep(refresh)
                     continue
@@ -5825,7 +5825,7 @@ class QuantTerminalBackend:
             refresh = 30.0
             try:
                 mj_cfg = load_mj_cfg(self.scanner_cfg)
-                refresh = max(2.0, min(float(mj_cfg.get("dynamic_refresh_seconds", 3.0) or 3.0), 60.0))
+                refresh = max(1.0, min(float(mj_cfg.get("dynamic_refresh_seconds", 3.0) or 3.0), 60.0))
                 spot = float((self.cached_telemetry.get("spot") or {}).get("price") or 0.0)
                 is_open, _status_txt = self.is_nse_market_open()
                 if (
