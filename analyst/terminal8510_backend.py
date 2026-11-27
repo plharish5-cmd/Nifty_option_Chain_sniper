@@ -11841,6 +11841,18 @@ class QuantTerminalBackend:
                 )
         return markers
 
+    def _replay_payload_with_audit(self, payload: Dict[str, Any], session_date: str) -> Dict[str, Any]:
+        """Attach read-only strategy_decision_audit rows for Replay chart-homework inference."""
+        out = dict(payload)
+        try:
+            from analyst.decision_audit_8510 import read
+
+            out["decision_audit"] = read(self.ledger_db, str(session_date)[:10], None, 2000)
+        except Exception as exc:
+            log.debug("Replay decision audit attach skipped: %s", exc)
+            out["decision_audit"] = []
+        return out
+
     async def run_date_replay(
         self,
         selected_date: str,
@@ -11861,7 +11873,7 @@ class QuantTerminalBackend:
             filt = sf if sf != "ALL" else "ALL"
             if master_filtered:
                 stats = self._replay_summary_stats(master_filtered)
-                return {
+                return self._replay_payload_with_audit({
                     "ok": True,
                     "date": selected_date,
                     "trades": master_filtered,
@@ -11872,7 +11884,7 @@ class QuantTerminalBackend:
                     "replay_kind": DATA_SOURCE_IMMUTABLE,
                     "strategy_filter": filt,
                     "message": "Immutable master rows for this strategy (real fills).",
-                }
+                }, selected_date)
             bt = self.run_date_range_backtest(
                 selected_date,
                 selected_date,
@@ -11884,7 +11896,7 @@ class QuantTerminalBackend:
             trades = [self._replay_trade_from_backtest_row(r) for r in (bt.get("trades") or [])]
             stats = self._replay_summary_stats(trades)
             chart_markers = self.build_prototype_replay_markers(trades)
-            return {
+            return self._replay_payload_with_audit({
                 "ok": True,
                 "date": selected_date,
                 "trades": trades,
@@ -11899,10 +11911,10 @@ class QuantTerminalBackend:
                     "Rule replay on stored NSE Nifty spot 1m (sec_id=13) for selected strategy. "
                     "Index entry/exit and IST times are from the walk; options blank (SYNTHESIZED)."
                 ),
-            }
+            }, selected_date)
         if master_filtered:
             stats = self._replay_summary_stats(master_filtered)
-            return {
+            return self._replay_payload_with_audit({
                 "ok": True,
                 "date": selected_date,
                 "trades": master_filtered,
@@ -11913,13 +11925,13 @@ class QuantTerminalBackend:
                 "replay_kind": DATA_SOURCE_IMMUTABLE,
                 "strategy_filter": sf,
                 "message": "Immutable algo execution master — real fills captured at close.",
-            }
+            }, selected_date)
 
         result = self.get_unified_trades_report(
             selected_date, selected_date, bias=bias or self.directional_bias
         )
         rows = result["trades"]
-        return {
+        return self._replay_payload_with_audit({
             **result,
             "date": selected_date,
             "trades_count": len(rows),
@@ -11927,7 +11939,7 @@ class QuantTerminalBackend:
             "total_net_pnl": result["recorded_net_pnl"],
             "win_rate": 100 * sum(r["net_pnl"] > 0 for r in rows) / len(rows) if rows else None,
             "replay_kind": "RECORDED_LEDGER_REVIEW",
-        }
+        }, selected_date)
 
     # ── DATE-RANGE SUPER TRAIL BACKTESTER ────────────────────────────────────
     def _load_historical_trades(self) -> List[Dict[str, Any]]:

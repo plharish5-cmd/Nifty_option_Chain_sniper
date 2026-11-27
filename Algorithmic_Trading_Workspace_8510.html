@@ -2892,10 +2892,11 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 <div id="replayHomeworkPanel" style="margin-bottom:16px; border:1px solid rgba(56,189,248,0.35); border-radius:8px; padding:12px 14px; background:rgba(9,14,26,0.92);">
                     <div style="display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:8px;">
                         <span style="font-size:13px; font-weight:800; color:#38bdf8;">Chart Homework Notes</span>
-                        <button type="button" class="emerald-btn" id="replayCopyHomeworkBtn" onclick="copyReplayHomework()">📋 Copy Homework to Chart</button>
+                        <button type="button" class="emerald-btn" id="replayCopyHomeworkBtn" onclick="copyReplayHomework()">📋 Copy All Homework</button>
                         <span id="replayCopyHomeworkAck" style="font-size:11px; color:var(--emerald); opacity:0; transition:opacity 0.3s;">Copied!</span>
                     </div>
-                    <pre id="replayHomeworkText" style="margin:0; padding:10px 12px; background:#0b1220; border-radius:6px; color:#e2e8f0; font-family:var(--font-mono); font-size:11.5px; line-height:1.45; white-space:pre-wrap; max-height:420px; overflow:auto;">Select a date to load trades — homework generates automatically for every session (including today).</pre>
+                    <div id="replayHomeworkCards" style="display:flex; flex-direction:column; gap:10px; max-height:520px; overflow:auto;"></div>
+                    <pre id="replayHomeworkText" style="display:none; margin:0;"></pre>
                 </div>
 
                 <div id="replayAlgoChartWrap" style="display:none; margin-bottom:16px; border:1px solid var(--border-subtle); border-radius:8px; padding:8px 10px 4px; background:rgba(9,14,26,0.85);">
@@ -6917,6 +6918,8 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
         let _replaySessionDate = "";
         let _replayLastPayload = null;
         let _replayHomeworkText = "";
+        let _replayDecisionAudit = [];
+        let _replayTradeCallouts = {};
 
         function renderReplayStrategyPills() {
             const el = document.getElementById("replayStrategyPills");
@@ -7005,35 +7008,169 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
             return setup || "Strategy";
         }
 
-        function replayEntryContextTag(t, prev) {
-            const setup = String(t.setup_name || t.setup || "");
-            if (/PREVIOUS CANDLE CLOSED BELOW 8 EMA/i.test(setup)) return "(PREVIOUS CANDLE CLOSED BELOW 8 EMA)";
-            if (/PREVIOUS CANDLE CLOSED ABOVE 8 EMA/i.test(setup)) return "(PREVIOUS CANDLE CLOSED ABOVE 8 EMA)";
-            if (prev && /OPPOSITE_8EMA/.test(replayExitReason(prev))) return "(TRIGGERED AFTER OPP 8 EMA CLOSE)";
-            return "";
-        }
-
         function replaySameFamily(a, b) {
             return replayStrategyHomeworkLabel(a) === replayStrategyHomeworkLabel(b);
         }
 
-        function replayTransitionLine(t, next) {
+        function prevTradeInLane(sorted, index) {
+            const lane = replayStrategyHomeworkLabel(sorted[index]);
+            for (let j = index - 1; j >= 0; j--) {
+                if (replayStrategyHomeworkLabel(sorted[j]) === lane) return sorted[j];
+            }
+            return null;
+        }
+
+        function replayAuditLane(t) {
+            const blob = (String(t.strategy_id || "") + " " + String(t.setup_name || t.setup || "")).toUpperCase();
+            if (/EMA8_PROTOTYPE|8 EMA PROTOTYPE/.test(blob)) return "prototype";
+            if (/CROSSOVER|REVERSAL|STAGE_2|STAGE_3/.test(blob)) return "reversal";
+            if (/FLAGSHIP|H1_8EMA|1H 8/.test(blob)) return "flagship";
+            return null;
+        }
+
+        function replayMinutesOfDay(ts) {
+            const raw = String(ts || "");
+            const m = raw.match(/(\d{1,2}):(\d{2})/);
+            if (!m) return null;
+            let h = parseInt(m[1], 10);
+            const min = parseInt(m[2], 10);
+            if (/PM/i.test(raw) && h < 12) h += 12;
+            if (/AM/i.test(raw) && h === 12) h = 0;
+            return h * 60 + min;
+        }
+
+        function replayAuditMatchTrade(t, audits) {
+            const lane = replayAuditLane(t);
+            if (!lane) return null;
+            const entMin = replayMinutesOfDay(t.entry_ist || t.entry_time);
+            if (entMin == null) return null;
+            const wantSide = String(t.direction || "").toUpperCase();
+            const wantOpt = replayTradeSide(t) === "CE" ? "LONG" : "SHORT";
+            let best = null;
+            let bestD = 1e9;
+            for (const a of audits || []) {
+                if (String(a.lane || "") !== lane) continue;
+                const as = String(a.side || "").toUpperCase();
+                if (as && wantSide && as !== wantSide && as !== wantOpt) continue;
+                const rMin = replayMinutesOfDay(a.recorded_at);
+                if (rMin == null) continue;
+                const d = Math.abs(rMin - entMin);
+                if (d > 8) continue;
+                const stage = String(a.stage || "").toUpperCase();
+                const reason = String(a.reason || "");
+                const relevant = /ORDER_ACCEPTED|CANDIDATE|ENTRY|SIGNAL|RETOUCH|TOUCH/.test(stage + reason);
+                if (!relevant && d > 3) continue;
+                if (d < bestD) {
+                    bestD = d;
+                    best = a;
+                }
+            }
+            return best;
+        }
+
+        function replayTouchKindFromAudit(audit, setup) {
+            const blob = String(audit?.reason || "") + " " + String(setup || "");
+            if (/retouch|re-touch|RETOUCH/i.test(blob)) return "RETOUCH";
+            if (/first touch|first_touch|FIRST TOUCH/i.test(blob)) return "FIRST TOUCH";
+            if (/touch|TOUCH/i.test(blob)) return "RETOUCH";
+            return "FIRST TOUCH";
+        }
+
+        function replayInferEntryReason(t, prevInLane, audit) {
+            const side = replayTradeSide(t);
+            const setup = String(t.setup_name || t.setup || "");
+            const reason = String(audit?.reason || "");
+            if (prevInLane && /OPPOSITE_8EMA/.test(replayExitReason(prevInLane))) {
+                return `(OPP 8 EMA CLOSE -> ${side} ARMED)`;
+            }
+            if (/PREVIOUS CANDLE CLOSED BELOW 8 EMA/i.test(setup)) {
+                return `(PREVIOUS CANDLE CLOSED BELOW 8 EMA — ${replayTouchKindFromAudit(audit, setup)})`;
+            }
+            if (/PREVIOUS CANDLE CLOSED ABOVE 8 EMA/i.test(setup)) {
+                return `(PREVIOUS CANDLE CLOSED ABOVE 8 EMA — ${replayTouchKindFromAudit(audit, setup)})`;
+            }
+            if (prevInLane && /SPOT_SL_HIT|OPTION_SL_HIT/.test(replayExitReason(prevInLane))
+                && replayTradeSide(prevInLane) === side) {
+                return `(RE-ENTRY AFTER SL — ${side} ARM STILL ON)`;
+            }
+            if (/below.*8 ema|closed below/i.test(reason)) {
+                return `(PREVIOUS CANDLE CLOSED BELOW 8 EMA — ${replayTouchKindFromAudit(audit, setup)})`;
+            }
+            if (/above.*8 ema|closed above/i.test(reason)) {
+                return `(PREVIOUS CANDLE CLOSED ABOVE 8 EMA — ${replayTouchKindFromAudit(audit, setup)})`;
+            }
+            if (/retouch|touch/i.test(reason)) {
+                const aboveBelow = side === "CE" ? "ABOVE" : "BELOW";
+                return `(PREVIOUS CANDLE CLOSED ${aboveBelow} 8 EMA — ${replayTouchKindFromAudit(audit, setup)})`;
+            }
+            if (prevInLane && /OPPOSITE_8EMA/.test(replayExitReason(prevInLane))) {
+                return `(TRIGGERED AFTER OPP 8 EMA CLOSE)`;
+            }
+            return "";
+        }
+
+        function replayPostExitLine(t, nextInLane) {
             const side = replayTradeSide(t);
             const reason = replayExitReason(t);
+            if (/^EOD_SQUARE_OFF/.test(reason)) return "SESSION CLOSED (EOD)";
             if (/OPPOSITE_8EMA/.test(reason)) {
-                return side === "PE" ? "CE TRIGGERED" : "PE TRIGGERED";
+                return side === "PE"
+                    ? "OPP 8 EMA CLOSE -> CE TRIGGERED"
+                    : "OPP 8 EMA CLOSE -> PE TRIGGERED";
             }
             const slish = /SPOT_SL_HIT|OPTION_SL_HIT|SPOT_TRAIL_EXIT|OPTION_TARGET_HIT|SL_HIT|TRAIL/.test(reason);
             if (!slish) return "";
-            const reentryNote = " (reentry_after_stop_loss)";
-            if (next && replaySameFamily(t, next)) {
-                const ns = replayTradeSide(next);
-                if (ns === side) {
-                    return (side === "PE" ? "PE ARM STILL ON" : "CE ARM STILL ON") + reentryNote;
-                }
-                return (ns === "CE" ? "CE TRIGGERED AFTER STOP LOSS" : "PE TRIGGERED AFTER STOP LOSS");
+            if (nextInLane) {
+                const ns = replayTradeSide(nextInLane);
+                if (ns !== side) return `NEXT: ${ns} TRIGGERED`;
+                return `${side} ARM STILL ON`;
             }
-            return (side === "PE" ? "PE ARM STILL ON" : "CE ARM STILL ON") + reentryNote;
+            return `${side} ARM STILL ON`;
+        }
+
+        function replayNextInLane(sorted, index) {
+            const lane = replayStrategyHomeworkLabel(sorted[index]);
+            for (let j = index + 1; j < sorted.length; j++) {
+                if (replayStrategyHomeworkLabel(sorted[j]) === lane) return sorted[j];
+            }
+            return null;
+        }
+
+        function buildReplayTradeCallout(t, idx, prevInLane, nextInLane, audit) {
+            const side = replayTradeSide(t);
+            const book = replayExecutionBookBadge(t).label;
+            const strat = replayStrategyHomeworkLabel(t);
+            const entryTag = replayInferEntryReason(t, prevInLane, audit);
+            const se = Number(t.index_entry);
+            const sx = Number(t.index_exit);
+            const oe = Number(t.option_entry);
+            const ox = Number(t.option_exit);
+            const entHm = replayHmFromTs(t.entry_ist || t.entry_time);
+            const exHm = replayHmFromTs(t.exit_ist || t.exit_time);
+            const spotE = Number.isFinite(se) ? se.toFixed(2) : "—";
+            const spotX = Number.isFinite(sx) ? sx.toFixed(2) : "—";
+            const optE = Number.isFinite(oe) ? oe.toFixed(2) : "—";
+            const optX = Number.isFinite(ox) ? ox.toFixed(2) : "—";
+            const reason = replayExitReason(t);
+            const lines = [];
+            lines.push(`#${idx} ${side} [${book}]${entryTag ? " " + entryTag : ""}`);
+            lines.push(`IN : ${spotE} (${optE}) @ ${entHm}`);
+            if (Number.isFinite(sx) && exHm !== "—") {
+                lines.push(`OUT: ${spotX} (${optX}) @ ${exHm} | ${reason}`);
+            } else {
+                lines.push("OUT: OPEN");
+            }
+            const np = Number(t.net_pnl);
+            if (Number.isFinite(np)) {
+                lines.push(np >= 0 ? `P&L: +${Math.round(np)} INR` : `P&L: -${Math.round(Math.abs(np))} INR`);
+            } else if (Number.isFinite(Number(t.st_pnl_pts))) {
+                const pts = Number(t.st_pnl_pts);
+                lines.push(pts >= 0 ? `P&L: +${pts.toFixed(1)} NIFTY PTS` : `P&L: -${Math.abs(pts).toFixed(1)} NIFTY PTS`);
+            }
+            const post = replayPostExitLine(t, nextInLane);
+            const compactPost = post.startsWith("NEXT:") ? post : (post ? `NEXT: ${post}` : "");
+            if (compactPost) lines.push(compactPost);
+            return lines.join("\n");
         }
 
         function replayDateChartFormat(iso) {
@@ -7048,18 +7185,23 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
             const dDisp = replayDateChartFormat(sessionDate);
             const pill = REPLAY_STRATEGY_PILLS.find(p => p.id === replayStrategyPill);
             const stratHead = pill && replayStrategyPill !== "ALL" ? pill.label : "All Strategies";
+            _replayTradeCallouts = {};
             if (!sorted.length) {
                 return `DATE: ${dDisp} | STRATEGY: ${stratHead}\n(No trades for this filter on this date.)`;
             }
             const lines = [`DATE: ${dDisp} | STRATEGY: ${stratHead}`];
             let wins = 0, losses = 0, net = 0;
             sorted.forEach((t, i) => {
+                const n = i + 1;
+                const prevInLane = prevTradeInLane(sorted, i);
+                const nextInLane = replayNextInLane(sorted, i);
+                const audit = replayAuditMatchTrade(t, _replayDecisionAudit);
                 const side = replayTradeSide(t);
                 const book = replayExecutionBookBadge(t).label;
                 const strat = replayStrategyHomeworkLabel(t);
-                const ctx = replayEntryContextTag(t, i > 0 ? sorted[i - 1] : null);
-                const ctxTxt = ctx ? ` ${ctx}` : "";
-                lines.push(`#${i + 1}, ${side} TRADE [${book}] — ${strat}${ctxTxt}`);
+                const entryTag = replayInferEntryReason(t, prevInLane, audit);
+                const ctxTxt = entryTag ? ` ${entryTag}` : "";
+                lines.push(`#${n}, ${side} TRADE [${book}] — ${strat}${ctxTxt}`);
                 const se = Number(t.index_entry);
                 const sx = Number(t.index_exit);
                 const oe = Number(t.option_entry);
@@ -7093,24 +7235,49 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                         lines.push(pts >= 0 ? `PROFIT: +${pts.toFixed(1)} NIFTY PTS` : `LOSS: -${Math.abs(pts).toFixed(1)} NIFTY PTS`);
                     }
                 }
-                const trans = replayTransitionLine(t, sorted[i + 1]);
-                if (trans) lines.push(trans);
+                const post = replayPostExitLine(t, nextInLane);
+                if (post) lines.push(post);
+                _replayTradeCallouts[n] = buildReplayTradeCallout(t, n, prevInLane, nextInLane, audit);
+                lines.push("");
             });
             const netRound = Math.round(net);
             const sign = netRound >= 0 ? "+" : "";
-            lines.push(`SUMMARY (${dDisp}): ${sorted.length} Trades (${wins}W / ${losses}L) | Net P&L: ${sign}${netRound} RUPEES`);
+            lines.push(`SUMMARY (${dDisp}): ${sorted.length} Trades (${wins}W / ${losses}L) | Net P&L: ${sign}${netRound} INR`);
             return lines.join("\n");
         }
 
         function renderReplayHomeworkOnly(trades) {
             const pre = document.getElementById("replayHomeworkText");
-            if (!pre) return;
+            const cards = document.getElementById("replayHomeworkCards");
             _replayHomeworkText = buildReplayHomeworkText(_replaySessionDate, trades || _replayAllTrades);
-            pre.textContent = _replayHomeworkText;
+            if (pre) pre.textContent = _replayHomeworkText;
+            if (!cards) return;
+            const filtered = (trades || _replayAllTrades || []).filter(t => replayTradeMatchesPill(t, replayStrategyPill));
+            const sorted = filtered.slice().sort((a, b) => replaySortKey(a) - replaySortKey(b));
+            if (!sorted.length) {
+                cards.innerHTML = '<div style="color:var(--text-muted); font-size:12px; padding:8px;">No trades for this filter — homework empty.</div>';
+                return;
+            }
+            cards.innerHTML = sorted.map((t, i) => {
+                const n = i + 1;
+                const callout = _replayTradeCallouts[n] || buildReplayTradeCallout(
+                    t, n,
+                    prevTradeInLane(sorted, i),
+                    replayNextInLane(sorted, i),
+                    replayAuditMatchTrade(t, _replayDecisionAudit)
+                );
+                const esc = callout.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                return `<div style="border:1px solid rgba(148,163,184,0.25); border-radius:8px; padding:10px 12px; background:#0b1220;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
+                        <span style="font-size:11px; font-weight:700; color:#94a3b8;">Trade #${n}</span>
+                        <button type="button" class="cyan-btn" style="padding:4px 10px; font-size:11px;" onclick="copyReplayTradeCallout(${n})">Copy #${n}</button>
+                    </div>
+                    <pre style="margin:0; font-family:var(--font-mono); font-size:11.5px; line-height:1.45; color:#e2e8f0; white-space:pre-wrap;">${esc}</pre>
+                </div>`;
+            }).join("");
         }
 
-        async function copyReplayHomework() {
-            const text = _replayHomeworkText || (document.getElementById("replayHomeworkText")?.textContent || "");
+        async function copyTextToClipboard(text, ackEl) {
             if (!text) return;
             try {
                 await navigator.clipboard.writeText(text);
@@ -7122,11 +7289,21 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 document.execCommand("copy");
                 document.body.removeChild(ta);
             }
-            const ack = document.getElementById("replayCopyHomeworkAck");
-            if (ack) {
-                ack.style.opacity = "1";
-                setTimeout(() => { ack.style.opacity = "0"; }, 2000);
+            if (ackEl) {
+                ackEl.style.opacity = "1";
+                setTimeout(() => { ackEl.style.opacity = "0"; }, 2000);
             }
+        }
+
+        async function copyReplayHomework() {
+            const text = _replayHomeworkText || (document.getElementById("replayHomeworkText")?.textContent || "");
+            await copyTextToClipboard(text, document.getElementById("replayCopyHomeworkAck"));
+        }
+
+        async function copyReplayTradeCallout(n) {
+            const text = _replayTradeCallouts[n];
+            if (!text) return;
+            await copyTextToClipboard(text, document.getElementById("replayCopyHomeworkAck"));
         }
 
         function renderReplayTradesFiltered() {
@@ -7232,6 +7409,14 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 _replaySessionDate = dt;
                 _replayAllTrades = d.trades || [];
                 _replayLastPayload = d;
+                _replayDecisionAudit = Array.isArray(d.decision_audit) ? d.decision_audit : [];
+                if (!_replayDecisionAudit.length) {
+                    try {
+                        const ar = await fetch(`/api/scanner/decision-audit?day=${encodeURIComponent(dt)}&limit=2000`);
+                        const ad = await ar.json();
+                        if (ad.ok && Array.isArray(ad.rows)) _replayDecisionAudit = ad.rows;
+                    } catch (_) { /* optional */ }
+                }
 
                 document.getElementById("replayCandlesCount").textContent = `${d.candles_count} / 375`;
                 renderReplayTradesFiltered();
