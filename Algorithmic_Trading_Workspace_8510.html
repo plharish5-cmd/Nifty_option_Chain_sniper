@@ -2101,6 +2101,15 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
                 <!-- Strategy cockpit grid -->
                 <div id="strategyCockpitGrid">
                     <div class="cockpit-section-tag">Desk overview</div>
+                    <!-- Manual daily directional bias — your StockMojo read, independent of the OI feed. Blocks ALL 3 strategies. -->
+                    <div id="biasControlBar" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; background:#0f172a; border:1px solid #334155; border-radius:6px; padding:8px 12px; margin:4px 0 12px;">
+                        <span style="font-weight:700; color:#fbbf24; font-size:12px;">Today's bias:</span>
+                        <button type="button" id="biasBtnCE" onclick="setDirectionalBias('SHORT_ONLY')" title="Call writers dominate — block every CE (buy-call) entry across all 3 strategies; only PE allowed" style="padding:5px 12px; font-size:11px; font-weight:600; border:1px solid #7f1d1d; border-radius:5px; background:#1e293b; color:#fca5a5; cursor:pointer;">🚫 Block CE (calls)</button>
+                        <button type="button" id="biasBtnBoth" onclick="setDirectionalBias('BOTH')" title="Normal — both CE and PE allowed" style="padding:5px 12px; font-size:11px; font-weight:600; border:1px solid #166534; border-radius:5px; background:#1e293b; color:#86efac; cursor:pointer;">Both allowed</button>
+                        <button type="button" id="biasBtnPE" onclick="setDirectionalBias('LONG_ONLY')" title="Put writers dominate — block every PE (buy-put) entry across all 3 strategies; only CE allowed" style="padding:5px 12px; font-size:11px; font-weight:600; border:1px solid #7f1d1d; border-radius:5px; background:#1e293b; color:#fca5a5; cursor:pointer;">🚫 Block PE (puts)</button>
+                        <span style="margin-left:auto; font-size:11px; color:#94a3b8;">Current: <b id="biasCurrent" style="color:#e2e8f0;">—</b></span>
+                        <span style="flex-basis:100%; font-size:10px; color:#64748b;">Manual — set from your StockMojo OI read each morning. Does NOT depend on the 8600 feed, so it blocks reliably even when that feed is stale.</span>
+                    </div>
                     <div class="cockpit-mini-grid">
                     <!-- Strategy 1: Stage 2 8-EMA (Long) -->
                     <div class="strat-tile">
@@ -3106,9 +3115,43 @@ input[type=checkbox],input[type=radio] { min-width:14px; min-height:14px; }
         let currentPosStrategyFilter = "ALL";
 
         // ── 2. INITIALIZATION & CLOCK ─────────────────────────────────────────
+        // --- Manual daily directional bias (block CE / block PE / both) ---
+        function applyBiasUI(bias) {
+            bias = String(bias || "BOTH").toUpperCase();
+            const label = {SHORT_ONLY:"BLOCK CE — only PE", LONG_ONLY:"BLOCK PE — only CE", BOTH:"BOTH allowed"}[bias] || bias;
+            const cur = document.getElementById("biasCurrent");
+            if (cur) { cur.textContent = label; cur.style.color = (bias === "BOTH") ? "#86efac" : "#fca5a5"; }
+            const map = {biasBtnCE:"SHORT_ONLY", biasBtnBoth:"BOTH", biasBtnPE:"LONG_ONLY"};
+            for (const id in map) {
+                const b = document.getElementById(id); if (!b) continue;
+                const active = (map[id] === bias);
+                b.style.outline = active ? "2px solid #fbbf24" : "none";
+                b.style.boxShadow = active ? "0 0 6px rgba(251,191,36,0.5)" : "none";
+                b.style.opacity = active ? "1" : "0.7";
+            }
+        }
+        async function loadDirectionalBias() {
+            try {
+                const r = await fetch("/api/directional_bias", { cache: "no-store" });
+                const j = await r.json();
+                applyBiasUI(j.directional_bias);
+            } catch (e) { /* leave as — */ }
+        }
+        async function setDirectionalBias(bias) {
+            try {
+                const r = await fetch("/api/directional_bias", {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ bias: bias })
+                });
+                const j = await r.json();
+                applyBiasUI(j.directional_bias || bias);
+            } catch (e) { alert("Could not set bias: " + e); }
+        }
+
         document.addEventListener("DOMContentLoaded", () => {
             updateClock();
             setInterval(updateClock, 1000);
+            loadDirectionalBias();
             loadDhanConfig();
             initScannerGatesUI();
             updateGateScopeBadges();
