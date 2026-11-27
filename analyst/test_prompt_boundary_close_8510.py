@@ -11,7 +11,11 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from analyst.ema8_prototype_8510 import current_nse_15m_open_ts, ensure_forming_b15_bar
+from analyst.ema8_prototype_8510 import (
+    current_nse_15m_open_ts,
+    ensure_forming_b15_bar,
+    just_closed_bar_is_complete,
+)
 
 IST = ZoneInfo("Asia/Kolkata")
 DAY = "2026-11-27"
@@ -61,6 +65,28 @@ def test_no_double_append_when_bucket_already_present():
     b15b, _ = ensure_forming_b15_bar(b15, bar_open_ts=cur_open, live_spot=25836.0)
     assert len(b15b) == 3  # unchanged
     assert b15b.index[-2].strftime("%H:%M") == "09:45"
+
+
+def _ts_at(hm):
+    h, m = (int(x) for x in hm.split(":"))
+    return int(datetime(2026, 11, 27, h, m, tzinfo=IST).timestamp())
+
+
+def test_completeness_guard_blocks_stale_close():
+    """Gemini's marginal-bar hole: if the just-closed bar's :59 candle is NOT yet in
+    the DB (only :58), do NOT surface it early — the slot is consumed once, so an
+    early flip on the stale :58 close would never be corrected."""
+    cur_open = _ts_at("10:00")  # just-closed bar is 09:45-10:00, final minute 09:59
+    # latest candle is 09:58 (:59 not yet landed) -> incomplete -> hold off
+    assert just_closed_bar_is_complete(_ts_at("09:58"), cur_open) is False
+
+
+def test_completeness_guard_allows_real_close():
+    cur_open = _ts_at("10:00")
+    # the 09:59 candle has landed -> bar complete -> safe to surface early
+    assert just_closed_bar_is_complete(_ts_at("09:59"), cur_open) is True
+    # a 10:00 candle present (old code's trigger) is also complete
+    assert just_closed_bar_is_complete(_ts_at("10:00"), cur_open) is True
 
 
 def test_within_bucket_no_new_boundary():

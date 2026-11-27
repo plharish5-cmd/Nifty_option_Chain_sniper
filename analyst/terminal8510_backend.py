@@ -11265,12 +11265,21 @@ class QuantTerminalBackend:
                     from analyst.ema8_prototype_8510 import (
                         current_nse_15m_open_ts,
                         ensure_forming_b15_bar,
+                        just_closed_bar_is_complete,
                     )
 
                     live_spot = float((self.cached_telemetry.get("spot") or {}).get("price") or 0.0)
                     if live_spot > 0 and not b15.empty:
                         cur_open = current_nse_15m_open_ts(datetime.now(IST))
-                        b15, _ = ensure_forming_b15_bar(b15, bar_open_ts=cur_open, live_spot=live_spot)
+                        # COMPLETENESS GUARD (closes the marginal-bar re-eval hole Gemini
+                        # flagged): only surface the just-closed bar early when its close is
+                        # REAL — i.e. its final 1m candle (:59 minute) is already in the DB.
+                        # The slot is consumed once, so an early flip on a stale close would
+                        # never be corrected; falling back to the late path keeps us strictly
+                        # >= old behaviour. The :59 candle lands within seconds of the boundary,
+                        # so the common case still flips promptly (fixes 27 Nov CE #3).
+                        if just_closed_bar_is_complete(int(df["ts"].max()), cur_open):
+                            b15, _ = ensure_forming_b15_bar(b15, bar_open_ts=cur_open, live_spot=live_spot)
                 except Exception as exc:
                     log.debug("prompt-boundary forming-bar append skipped: %s", exc)
             if len(b15) < 2:

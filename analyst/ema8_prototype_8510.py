@@ -488,6 +488,21 @@ def current_nse_15m_open_ts(now: Optional[datetime] = None) -> int:
     return int(session_open.timestamp()) + bucket
 
 
+def just_closed_bar_is_complete(latest_1m_ts: int, cur_15m_open_ts: int) -> bool:
+    """True when the just-closed 15m bar's FINAL 1-minute candle (the :59 minute,
+    ts = cur_15m_open_ts - 60) is already present, so the bar's close is real and a
+    prompt-boundary arm-flip is safe.
+
+    The just-closed bar's own minutes (09:45..09:59 for the 10:00 boundary) complete
+    at the boundary and are written within seconds; only the NEXT bucket's first 1m
+    candle is the ~60-90s-late one that hid the bar before the prompt-boundary fix.
+    If :59 is not yet present we must NOT flip early on a stale (e.g. :58) close,
+    because the slot is consumed once and an early wrong flip would never be
+    corrected — so we fall back to the normal late path (strictly >= old behaviour).
+    """
+    return int(latest_1m_ts) >= int(cur_15m_open_ts) - 60
+
+
 def ensure_forming_b15_bar(
     b15: pd.DataFrame,
     *,
