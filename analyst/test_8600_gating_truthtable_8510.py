@@ -21,6 +21,26 @@ VOTES = ("AGREE", "OPPOSE", "STALE")
 MODES = ("BLOCK", "LOG_ONLY")
 
 
+@pytest.fixture(autouse=True)
+def _isolate_lane_gating_defaults(monkeypatch):
+    """Isolate every test from the user-mutable analyst/live_sheet_rules.json.
+
+    The cockpit's 8600-OI "Log only / Block" radios write that file at runtime,
+    so a test that reads it passes or fails depending on what the operator last
+    clicked. Pin the FILE default to all-BLOCK here so these tests verify the
+    gating LOGIC deterministically on any machine; explicit scanner_cfg overrides
+    still take effect on top.
+    """
+    import analyst.desk8600_lane_gating_8510 as _gating_mod
+
+    all_block = {lane: {sk: "BLOCK" for sk, _, _ in TRACK2_SIGNALS} for lane in LANES}
+    monkeypatch.setattr(
+        _gating_mod,
+        "_file_lane_gating_defaults",
+        lambda: {lane: dict(all_block[lane]) for lane in LANES},
+    )
+
+
 def _source(vote: str, age: int = 6) -> dict:
     if vote == "STALE":
         return {"direction": None, "feed_state": "STALE", "age_sec": age, "detail": "stale sample"}
