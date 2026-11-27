@@ -2481,56 +2481,61 @@ class DhanBroker:
         if not self.is_configured():
             return self._ltp_cache
 
-        # Shared per-account marketfeed budget (v266 #3): honour a 429 backoff
-        # or min-interval spacing set by any other caller (spot keep-alive,
-        # paper quotes), and register this send so they space off it in turn.
+        # Shared per-account marketfeed budget (v266 #3): serialise through the same
+        # gate.slot() as entry recovery / spot keep-alive so two coroutines cannot
+        # POST in the same second.
         try:
             from analyst.marketfeed_scheduler_8510 import get_gate
 
             _gate = get_gate(self)
-            if _gate.in_backoff() or _gate.seconds_until_slot() > 0:
-                return self._ltp_cache
         except Exception:
             _gate = None
 
-        # 2. Outbound HTTP Request wrapped in robust try/except with 429 Rate Limit Handler
+        if _gate is not None and _gate.in_backoff():
+            return self._ltp_cache
+
+        async def _post_marketfeed_ltp() -> Dict[str, float]:
+            async with ipv4_async_client(4.0) as client:
+                res = await client.post(
+                    f"{self.base_url}/marketfeed/ltp",
+                    json=segment_ids,
+                    headers=self._headers(),
+                )
+            if res.status_code == 200:
+                d = res.json().get("data", {})
+                for seg, sec_map in d.items():
+                    if isinstance(sec_map, dict):
+                        for sid, quote in sec_map.items():
+                            if isinstance(quote, dict) and "last_price" in quote:
+                                s_id = str(sid)
+                                price = float(quote["last_price"])
+                                self._ltp_cache[s_id] = price
+                                self._cache_timestamps[s_id] = now
+                                ltt = quote.get("last_trade_time") or quote.get("LTT") or quote.get("ltt")
+                                if ltt is not None:
+                                    self._ltt_cache[s_id] = ltt
+                self._backoff_delay = 3.0
+                self._backoff_until = 0.0
+                if _gate is not None:
+                    _gate.note_success()
+                return self._ltp_cache
+            if res.status_code == 429:
+                log.warning("[WARNING] Dhan API Rate Limit Hit (429) — serving cached prices and backing off.")
+                self._backoff_until = now + self._backoff_delay
+                self._backoff_delay = min(self._backoff_delay + 2.0, 15.0)
+                if _gate is not None:
+                    _gate.note_rate_limited()
+                return self._ltp_cache
+            log.debug("Marketfeed LTP returned status %s", res.status_code)
+            return self._ltp_cache
+
+        # 2. Outbound HTTP inside gate.slot() when the arbiter is available
         try:
             self._last_ltp_call = now
             if _gate is not None:
-                _gate.note_external_send()
-            async with ipv4_async_client(4.0) as client:
-                res = await client.post(f"{self.base_url}/marketfeed/ltp", json=segment_ids, headers=self._headers())
-                if res.status_code == 200:
-                    d = res.json().get("data", {})
-                    out = {}
-                    for seg, sec_map in d.items():
-                        if isinstance(sec_map, dict):
-                            for sid, quote in sec_map.items():
-                                if isinstance(quote, dict) and "last_price" in quote:
-                                    s_id = str(sid)
-                                    price = float(quote["last_price"])
-                                    out[s_id] = price
-                                    self._ltp_cache[s_id] = price
-                                    self._cache_timestamps[s_id] = now
-                                    ltt = quote.get("last_trade_time") or quote.get("LTT") or quote.get("ltt")
-                                    if ltt is not None:
-                                        self._ltt_cache[s_id] = ltt
-                    # Reset backoff upon successful response
-                    self._backoff_delay = 3.0
-                    self._backoff_until = 0.0
-                    if _gate is not None:
-                        _gate.note_success()
-                    return self._ltp_cache
-                elif res.status_code == 429:
-                    log.warning("[WARNING] Dhan API Rate Limit Hit (429) — serving cached prices and backing off.")
-                    self._backoff_until = now + self._backoff_delay
-                    self._backoff_delay = min(self._backoff_delay + 2.0, 15.0)  # Exponential backoff (3s to 5s to 15s)
-                    if _gate is not None:
-                        _gate.note_rate_limited()
-                    return self._ltp_cache
-                else:
-                    log.debug("Marketfeed LTP returned status %s", res.status_code)
-                    return self._ltp_cache
+                async with _gate.slot():
+                    return await _post_marketfeed_ltp()
+            return await _post_marketfeed_ltp()
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 429:
                 log.warning("[WARNING] Dhan API Rate Limit Hit (429) — serving cached prices and backing off.")
@@ -2546,6 +2551,8 @@ class DhanBroker:
                 log.warning("[WARNING] Dhan API Rate Limit Hit (429) — serving cached prices and backing off.")
                 self._backoff_until = now + self._backoff_delay
                 self._backoff_delay = min(self._backoff_delay + 2.0, 15.0)
+                if _gate is not None:
+                    _gate.note_rate_limited()
             else:
                 log.debug("Marketfeed LTP exception: %s", e)
             return self._ltp_cache
@@ -11265,21 +11272,26 @@ class QuantTerminalBackend:
                     from analyst.ema8_prototype_8510 import (
                         current_nse_15m_open_ts,
                         ensure_forming_b15_bar,
-                        just_closed_bar_is_complete,
+                        resolve_prompt_boundary_forming_spot,
                     )
 
-                    live_spot = float((self.cached_telemetry.get("spot") or {}).get("price") or 0.0)
-                    if live_spot > 0 and not b15.empty:
+                    if not b15.empty:
                         cur_open = current_nse_15m_open_ts(datetime.now(IST))
-                        # COMPLETENESS GUARD (closes the marginal-bar re-eval hole Gemini
-                        # flagged): only surface the just-closed bar early when its close is
-                        # REAL — i.e. its final 1m candle (:59 minute) is already in the DB.
-                        # The slot is consumed once, so an early flip on a stale close would
-                        # never be corrected; falling back to the late path keeps us strictly
-                        # >= old behaviour. The :59 candle lands within seconds of the boundary,
-                        # so the common case still flips promptly (fixes 27 Nov CE #3).
-                        if just_closed_bar_is_complete(int(df["ts"].max()), cur_open):
-                            b15, _ = ensure_forming_b15_bar(b15, bar_open_ts=cur_open, live_spot=live_spot)
+                        live_spot = float((self.cached_telemetry.get("spot") or {}).get("price") or 0.0)
+                        latest_1m_ts = int(df["ts"].max())
+                        ts_59 = int(cur_open) - 60
+                        c59_rows = df.loc[df["ts"] == ts_59, "c"]
+                        close_59 = float(c59_rows.iloc[0]) if not c59_rows.empty else 0.0
+                        forming_spot = resolve_prompt_boundary_forming_spot(
+                            live_spot,
+                            cur_15m_open_ts=cur_open,
+                            latest_1m_ts=latest_1m_ts,
+                            minute_close_at_59=close_59,
+                        )
+                        if forming_spot is not None and forming_spot > 0:
+                            b15, _ = ensure_forming_b15_bar(
+                                b15, bar_open_ts=cur_open, live_spot=forming_spot
+                            )
                 except Exception as exc:
                     log.debug("prompt-boundary forming-bar append skipped: %s", exc)
             if len(b15) < 2:

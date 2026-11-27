@@ -15,6 +15,7 @@ from analyst.ema8_prototype_8510 import (
     current_nse_15m_open_ts,
     ensure_forming_b15_bar,
     just_closed_bar_is_complete,
+    resolve_prompt_boundary_forming_spot,
 )
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -94,3 +95,23 @@ def test_within_bucket_no_new_boundary():
     # beyond what's already there.
     cur_open = current_nse_15m_open_ts(datetime(2026, 11, 27, 10, 7, 0, tzinfo=IST))
     assert datetime.fromtimestamp(cur_open, IST).strftime("%H:%M") == "10:00"
+
+
+def test_live_spot_zero_uses_59_close_for_forming_row():
+    """When telemetry spot is 0 but :59 is in DB, arm-flip still sees iloc[-2]."""
+    cur_open = _ts_at("10:00")
+    close_59 = 25841.0
+    forming = resolve_prompt_boundary_forming_spot(
+        0.0,
+        cur_15m_open_ts=cur_open,
+        latest_1m_ts=_ts_at("09:59"),
+        minute_close_at_59=close_59,
+    )
+    assert forming == close_59
+    b15 = _b15([("09:30", 25870.0), ("09:45", 25841.0)])
+    now = datetime(2026, 11, 27, 10, 0, 2, tzinfo=IST)
+    assert current_nse_15m_open_ts(now) == cur_open
+    b15b, _ = ensure_forming_b15_bar(b15, bar_open_ts=cur_open, live_spot=forming)
+    assert b15b.index[-1].strftime("%H:%M") == "10:00"
+    assert b15b.index[-2].strftime("%H:%M") == "09:45"
+    assert float(b15b.iloc[-2]["close"]) == close_59

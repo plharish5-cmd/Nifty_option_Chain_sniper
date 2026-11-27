@@ -503,6 +503,28 @@ def just_closed_bar_is_complete(latest_1m_ts: int, cur_15m_open_ts: int) -> bool
     return int(latest_1m_ts) >= int(cur_15m_open_ts) - 60
 
 
+def resolve_prompt_boundary_forming_spot(
+    live_spot: float,
+    *,
+    cur_15m_open_ts: int,
+    latest_1m_ts: int,
+    minute_close_at_59: float,
+) -> Optional[float]:
+    """Spot price for the synthetic forming row at a 15m boundary.
+
+    Uses live spot when available; when telemetry is empty/stale (e.g. 429 backoff)
+  but the just-closed bar's :59 minute is in the DB, fall back to that close so
+    the arm-flip path is not delayed ~60-90s waiting for a fresh tick.
+    """
+    if not just_closed_bar_is_complete(latest_1m_ts, cur_15m_open_ts):
+        return None
+    if live_spot > 0:
+        return float(live_spot)
+    if minute_close_at_59 > 0:
+        return float(minute_close_at_59)
+    return None
+
+
 def ensure_forming_b15_bar(
     b15: pd.DataFrame,
     *,
